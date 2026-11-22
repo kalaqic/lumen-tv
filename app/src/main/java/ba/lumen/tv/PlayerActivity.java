@@ -60,6 +60,16 @@ public class PlayerActivity extends Activity {
     private RowAdapter rowAdapter;
 
     private boolean triedAsHls = false;
+
+    private static final int LIVE_START_BUFFER_MS = 5000;
+    private static final int LIVE_REBUFFER_MS = 8000;
+    /** Prekinuta veza na streamu koji je radio: toliko puta se ponovo poveze prije prelaska na drugi izvor. */
+    private static final int MAX_RECONNECTS = 3;
+    private static final long RECONNECT_WINDOW_MS = 60000;
+    private boolean sourceWasPlaying;
+    private String currentMime;
+    private int reconnects;
+    private long reconnectWindowStart;
     private int playToken = 0;
 
     /** Izvor koji ne krene za ovoliko vremena smatra se neispravnim -> probaj sljedeci. */
@@ -236,8 +246,12 @@ public class PlayerActivity extends Activity {
         DefaultRenderersFactory renderers = new DefaultRenderersFactory(this)
                 .setEnableDecoderFallback(true);
 
+        // Rezerva: slika krene tek kad je ~5 s unaprijed ucitano (gledas 5 s "iza"),
+        // pa kratki prekidi mreze ne zaustave sliku. Ako ipak zastane, ceka 8 s rezerve
+        // prije nastavka, da ne bi stekalo svakih par sekundi.
         DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
-                .setBufferDurationsMs(15000, 50000, 1500, 3000)
+                .setBufferDurationsMs(20000, 50000, LIVE_START_BUFFER_MS, LIVE_REBUFFER_MS)
+                .setPrioritizeTimeOverSizeThresholds(true)
                 .build();
 
         player = new ExoPlayer.Builder(this, renderers)
@@ -250,6 +264,7 @@ public class PlayerActivity extends Activity {
                     buffering.setVisibility(View.VISIBLE);
                 } else if (state == Player.STATE_READY) {
                     handler.removeCallbacks(watchdog);
+                    sourceWasPlaying = true;
                     buffering.setVisibility(View.GONE);
                     errorView.setVisibility(View.GONE);
                     sourceStatus.setVisibility(View.GONE);
@@ -327,6 +342,8 @@ public class PlayerActivity extends Activity {
         final Channel s = sources.get(sourceIdx);
         currentSource = s;
         triedAsHls = false;
+        sourceWasPlaying = false;
+        reconnects = 0;
         ovNumber.setText(numberText());
 
         final int token = ++playToken;
@@ -424,6 +441,14 @@ public class PlayerActivity extends Activity {
 
         MediaItem.Builder b = new MediaItem.Builder().setUri(c.url);
         if (forcedMime != null && !forcedMime.isEmpty()) b.setMimeType(forcedMime);
+        currentMime = forcedMime;
+        if (!archiveMode) {
+            // ExoPlayer inace lagano ubrzava sliku (do 3%) da sustigne uzivo, sto pojede
+            // rezervu; ovako ostaje par sekundi iza i ne stece. Usporavanje je dozvoljeno.
+            b.setLiveConfiguration(new MediaItem.LiveConfiguration.Builder()
+                    .setMaxPlaybackSpeed(1.0f)
+                    .build());
+        }
 
         player.stop();
         player.setMediaItem(b.build());
@@ -450,6 +475,10 @@ public class PlayerActivity extends Activity {
             player.prepare();
             return;
         }
+        // stream je radio pa je veza pukla (mreza, server zatvorio konekciju): ponovo se
+        // povezi na isti izvor umjesto da se odmah prebaci na drugi ili prikaze greska
+        boolean ioError = error.errorCode >= 2000 && error.errorCode < 3000;
+        if (sourceWasPlaying && ioError && reconnect(s)) return;
         boolean formatProblem = error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
                 || error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
                 || error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED;
@@ -464,6 +493,40 @@ public class PlayerActivity extends Activity {
         }
         onSourceFailed(error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
                 ? Health.BLOCKED : Health.OFFLINE, describe(error));
+    }
+
+    private boolean reconnect(final Channel s) {
+        long now = System.currentTimeMillis();
+        if (now - reconnectWindowStart > RECONNECT_WINDOW_MS) {
+            reconnectWindowStart = now;
+            reconnects = 0;
+        }
+        if (reconnects >= MAX_RECONNECTS) return false;
+        reconnects++;
+        sourceWasPlaying = false;
+        sourceStatus.setText("Veza prekinuta · ponovo se povezujem…");
+        sourceStatus.setVisibility(View.VISIBLE);
+        final int token = playToken;
+        final String mime = currentMime;
+        if (archiveMode) {
+            // arhiva: nastavi od mjesta gdje je stala
+            final long pos = player.getCurrentPosition();
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (token != playToken || player == null) return;
+                    player.prepare();
+                    player.seekTo(pos);
+                }
+            }, 1000);
+        } else {
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (token != playToken || player == null || currentSource != s) return;
+                    startStream(s, mime);
+                }
+            }, 1000);
+        }
+        return true;
     }
 
     private static String describe(PlaybackException e) {
@@ -872,14 +935,14 @@ public class PlayerActivity extends Activity {
 
         switch (code) {
             case KeyEvent.KEYCODE_DPAD_UP:
-            case KeyEvent.KEYCODE_CHANNEL_DOWN:
+            case KeyEvent.KEYCODE_CHANNEL_UP:
             case KeyEvent.KEYCODE_PAGE_UP:
-                if (down) zap(-1);
+                if (down) zap(+1);   // gore = sljedeci kanal (5 -> 6)
                 return true;
             case KeyEvent.KEYCODE_DPAD_DOWN:
-            case KeyEvent.KEYCODE_CHANNEL_UP:
+            case KeyEvent.KEYCODE_CHANNEL_DOWN:
             case KeyEvent.KEYCODE_PAGE_DOWN:
-                if (down) zap(+1);
+                if (down) zap(-1);   // dole = prethodni kanal (5 -> 4)
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_MEDIA_REWIND:
