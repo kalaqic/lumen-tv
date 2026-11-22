@@ -2,6 +2,9 @@ plugins {
     id 'com.android.application'
 }
 
+// Na GitHubu se broj builda automatski povecava (1, 2, 3…); lokalno je 1
+def buildNum = (System.getenv('GITHUB_RUN_NUMBER') ?: '1').trim().toInteger()
+
 android {
     namespace 'ba.lumen.tv'
     compileSdk 34
@@ -10,8 +13,8 @@ android {
         applicationId 'ba.lumen.tv'
         minSdk 21
         targetSdk 34
-        versionCode 1
-        versionName '1.0'
+        versionCode buildNum
+        versionName "1.0.$buildNum"
     }
 
     signingConfigs {

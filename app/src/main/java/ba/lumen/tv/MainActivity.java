@@ -78,6 +78,12 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         stateText = findViewById(R.id.state_text);
         retryBtn = findViewById(R.id.btn_retry);
         search = findViewById(R.id.search);
+        TextView version = findViewById(R.id.app_version);
+        try {
+            version.setText("Lumen TV · verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+        } catch (Exception e) {
+            version.setText("Lumen TV");
+        }
 
         sideAdapter = new SidebarAdapter(this);
         side.setLayoutManager(new LinearLayoutManager(this));

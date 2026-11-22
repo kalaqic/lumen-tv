@@ -78,6 +78,16 @@
             android:paddingBottom="30dp"
             android:requiresFadingEdge="vertical"
             android:scrollbars="none" />
+
+        <TextView
+            android:id="@+id/app_version"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="18dp"
+            android:textColor="@color/text_3"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <!-- ===== Sadrzaj ===== -->
