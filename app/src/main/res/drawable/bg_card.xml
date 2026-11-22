@@ -1,26 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_focused="true">
-        <layer-list>
-            <item>
-                <shape android:shape="rectangle">
-                    <corners android:radius="18dp" />
-                    <gradient android:angle="0" android:startColor="@color/accent" android:endColor="@color/accent_2" />
-                </shape>
-            </item>
-            <item android:left="3dp" android:top="3dp" android:right="3dp" android:bottom="3dp">
-                <shape android:shape="rectangle">
-                    <corners android:radius="15dp" />
-                    <gradient android:angle="270" android:startColor="#26304A" android:endColor="#1A2236" />
-                </shape>
-            </item>
-        </layer-list>
+        <shape android:shape="rectangle">
+            <corners android:radius="14dp" />
+            <solid android:color="@color/surface_2" />
+            <stroke android:width="3dp" android:color="@color/focus" />
+        </shape>
     </item>
     <item>
         <shape android:shape="rectangle">
-            <corners android:radius="18dp" />
-            <gradient android:angle="270" android:startColor="#161F33" android:endColor="#111827" />
-            <stroke android:width="1dp" android:color="#1FFFFFFF" />
+            <corners android:radius="14dp" />
+            <solid android:color="@color/surface" />
         </shape>
     </item>
 </selector>

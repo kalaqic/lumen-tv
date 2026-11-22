@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg_deep">#05080F</color>
-    <color name="bg">#0A0F1C</color>
-    <color name="surface">#121A2B</color>
-    <color name="surface_2">#1A2439</color>
-    <color name="surface_3">#232F48</color>
-    <color name="stroke">#26324A</color>
-    <color name="text">#F4F6FB</color>
-    <color name="text_2">#A3AECA</color>
-    <color name="text_3">#64708A</color>
-    <color name="accent">#7C5CFF</color>
-    <color name="accent_2">#22D3EE</color>
-    <color name="accent_soft">#337C5CFF</color>
-    <color name="gold">#FBBF24</color>
-    <color name="live">#F43F5E</color>
+    <!-- Mirna, neutralna tamna paleta: jedna boja za naglaske, bijeli okvir za fokus -->
+    <color name="bg_deep">#0B0C0E</color>
+    <color name="bg">#111215</color>
+    <color name="sidebar">#0C0D0F</color>
+    <color name="surface">#191A1E</color>
+    <color name="surface_2">#222429</color>
+    <color name="surface_3">#2C2F35</color>
+    <color name="stroke">#2A2D33</color>
+    <color name="focus">#FFFFFF</color>
+    <color name="text">#F2F3F5</color>
+    <color name="text_2">#A6AAB2</color>
+    <color name="text_3">#6C717B</color>
+    <color name="accent">#4C8DFF</color>
+    <color name="accent_soft">#294C8DFF</color>
+    <color name="gold">#F5C04A</color>
+    <color name="live">#E5484D</color>
+    <color name="archive">#E9A23B</color>
+    <color name="online">#3DD68C</color>
     <color name="scrim">#B3000000</color>
     <color name="transparent">#00000000</color>
 </resources>

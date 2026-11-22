@@ -8,21 +8,31 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.net.URL;
 import java.net.URLEncoder;
 
 /**
- * Prijava na Xtream Codes IPTV uslugu. Host, korisnicko ime i lozinka unose se ovdje
- * i cuvaju se SAMO na ovom uredaju, nikad u kodu aplikacije.
- * Host i naziv se pamte, pa ih sljedeci put ne treba kucati.
+ * Dodavanje liste:
+ *  - TYPE_LOGIN: Xtream prijava (server, korisnik, lozinka) -> profil "Moje prijave".
+ *    U polje za server moze se zalijepiti i cijeli get.php link: korisnik i lozinka se sami popune.
+ *  - TYPE_LINK: obicni M3U link bez prijave -> profil "Besplatni kanali".
+ *    Ako je zalijepljeni link ipak get.php sa korisnikom i lozinkom, ide u "Moje prijave".
+ *
+ * Podaci se cuvaju SAMO na ovom uredaju, nikad u kodu aplikacije.
  */
 public class XtreamActivity extends Activity {
+
+    public static final String EXTRA_TYPE = "type";
+    public static final String TYPE_LOGIN = "login";
+    public static final String TYPE_LINK = "link";
 
     private Repo repo;
     private SharedPreferences prefs;
     private EditText inName, inHost, inUser, inPass;
+    private boolean linkMode;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -32,76 +42,169 @@ public class XtreamActivity extends Activity {
         Ui.applyFonts(getWindow().getDecorView());
         repo = Repo.get(this);
         prefs = getSharedPreferences("lumen", Context.MODE_PRIVATE);
+        linkMode = TYPE_LINK.equals(getIntent().getStringExtra(EXTRA_TYPE));
 
         inName = findViewById(R.id.in_name);
         inHost = findViewById(R.id.in_host);
         inUser = findViewById(R.id.in_user);
         inPass = findViewById(R.id.in_pass);
+        TextView title = findViewById(R.id.form_title);
+        TextView sub = findViewById(R.id.form_sub);
+        TextView btn = findViewById(R.id.btn_login);
 
-        String host = prefs.getString("xtream_host", "");
-        if (host.isEmpty()) host = hostFromSavedUrl();
-        inHost.setText(host);
-        inName.setText(prefs.getString("xtream_name", ""));
+        if (linkMode) {
+            title.setText("Dodaj M3U link");
+            sub.setText("Link plejliste koja ne traži prijavu. Kanali idu u „Besplatni kanali“.");
+            inHost.setHint("M3U link  (http://…)");
+            inUser.setVisibility(View.GONE);
+            inPass.setVisibility(View.GONE);
+            btn.setText("Dodaj link");
+            inHost.requestFocus();
+        } else {
+            title.setText(repo.logins().isEmpty() ? "Xtream prijava" : "Nova prijava");
+            sub.setText("Svi kanali iz svih prijava su zajedno u „Moje prijave“. Može i cijeli get.php link u polje za server. Podaci ostaju samo na ovom TV-u.");
+            String host = prefs.getString("xtream_host", "");
+            inHost.setText(host);
+            btn.setText("Prijavi se");
+            if (!host.isEmpty()) inUser.requestFocus();
+            else inHost.requestFocus();
+        }
 
-        findViewById(R.id.btn_login).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { login(); }
+        // upisan/zalijepljen cijeli get.php link -> kad se izadje iz polja, razdvoji ga
+        // na server, korisnika i lozinku (ne dok se kuca, da se lozinka ne odsijece)
+        inHost.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean hasFocus) {
+                if (!hasFocus && splitPastedLink()) inName.requestFocus();
+            }
         });
 
-        // host je vec upisan -> kreni od korisnickog imena
-        if (!host.isEmpty()) inUser.requestFocus();
-        else inHost.requestFocus();
+        btn.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { save(); }
+        });
     }
 
-    /** Host iz ranije sacuvanog Xtream linka (npr. nakon prelaska sa starije verzije). */
-    private String hostFromSavedUrl() {
-        String saved = prefs.getString("xtream_url", "");
-        if (saved.isEmpty()) return "";
-        try {
-            URL u = new URL(saved);
-            return u.getProtocol() + "://" + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
-        } catch (Exception e) {
-            return "";
-        }
+    /** Ako je u polju za server cijeli get.php link, rasporedi ga u polja. */
+    private boolean splitPastedLink() {
+        if (linkMode) return false;
+        Xtream x = Xtream.from(cleanPasted(inHost.getText().toString()));
+        if (x == null) return false;
+        inHost.setText(x.host);
+        inUser.setText(x.user);
+        inPass.setText(x.pass);
+        return true;
     }
 
-    private void login() {
+    private void save() {
+        splitPastedLink();
         String host = inHost.getText().toString().trim();
-        String user = inUser.getText().toString().trim();
-        String pass = inPass.getText().toString().trim();
         String name = inName.getText().toString().trim();
 
+        if (linkMode) {
+            if (host.isEmpty()) { toast("Upiši link plejliste."); return; }
+            host = cleanPasted(host);
+            try { new URL(host); } catch (Exception e) { toast("Link nije ispravan."); return; }
+            Xtream x = Xtream.from(host);
+            if (x != null) {
+                // link sa korisnikom i lozinkom je prijava, ne obicni link
+                repo.addLogin(name.isEmpty() ? defaultName(x.host) : name, loginUrl(x.host, x.user, x.pass));
+                repo.setLoginsMode();
+                toast("Ovo je link sa prijavom pa je dodan u „Moje prijave“.");
+            } else {
+                repo.addLink(name.isEmpty() ? defaultName(host) : name, host);
+                repo.setFreeMode();
+                toast("Link dodan u „Besplatni kanali“.");
+            }
+            finishToMain();
+            return;
+        }
+
+        String user = inUser.getText().toString().trim();
+        String pass = inPass.getText().toString().trim();
         if (host.isEmpty() || user.isEmpty() || pass.isEmpty()) {
-            Toast.makeText(this, "Popuni host, korisničko ime i lozinku.", Toast.LENGTH_LONG).show();
+            toast("Popuni server, korisničko ime i lozinku.");
             return;
         }
         if (!host.startsWith("http://") && !host.startsWith("https://")) host = "http://" + host;
-        while (host.endsWith("/")) host = host.substring(0, host.length() - 1);
-
+        // samo adresa servera (bez /get.php i slicnog)
+        try {
+            URL u = new URL(host);
+            host = u.getProtocol() + "://" + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+            if (u.getHost() == null || u.getHost().isEmpty()) throw new Exception();
+        } catch (Exception e) {
+            toast("Adresa servera nije ispravna.");
+            return;
+        }
         String url;
         try {
-            new URL(host); // provjera ispravnosti adrese
-            url = host + "/get.php?username=" + URLEncoder.encode(user, "UTF-8")
+            url = loginUrl(host, user, pass);
+        } catch (Exception e) {
+            toast("Adresa servera nije ispravna.");
+            return;
+        }
+        prefs.edit().putString("xtream_host", host).apply();
+        repo.addLogin(name.isEmpty() ? defaultName(host) + " · " + user : name, url);
+        repo.setLoginsMode();
+        toast("Prijava sačuvana na ovom TV-u.");
+        finishToMain();
+    }
+
+    /**
+     * Ocisti zalijepljen link: razmaci, "http://" ako fali, i link umotan u
+     * Facebook/Messenger preusmjerenje (l.facebook.com/l.php?u=...).
+     */
+    static String cleanPasted(String raw) {
+        String s = raw == null ? "" : raw.trim().replace(" ", "");
+        if (s.isEmpty()) return s;
+        if (!s.matches("(?i)^https?://.*")) s = "http://" + s;
+        try {
+            URL u = new URL(s);
+            String h = u.getHost() == null ? "" : u.getHost().toLowerCase(java.util.Locale.ROOT);
+            if ((h.endsWith("facebook.com") || h.endsWith("messenger.com")) && u.getQuery() != null) {
+                for (String kv : u.getQuery().split("&")) {
+                    if (kv.startsWith("u=")) {
+                        String inner = java.net.URLDecoder.decode(kv.substring(2), "UTF-8").trim();
+                        // Facebook doda svoj parametar na kraj (&fbclid=...)
+                        inner = inner.replaceAll("[?&]fbclid=[^&]*", "");
+                        return cleanPasted(inner);
+                    }
+                }
+            }
+        } catch (Exception ignored) { }
+        return s;
+    }
+
+    static String loginUrl(String host, String user, String pass) {
+        try {
+            return host + "/get.php?username=" + URLEncoder.encode(user, "UTF-8")
                     + "&password=" + URLEncoder.encode(pass, "UTF-8")
                     + "&type=m3u_plus&output=ts";
         } catch (Exception e) {
-            Toast.makeText(this, "Adresa servera nije ispravna.", Toast.LENGTH_LONG).show();
-            return;
+            throw new RuntimeException(e);
         }
+    }
 
-        if (name.isEmpty()) {
-            String h = host.replaceFirst("^https?://", "");
-            int colon = h.indexOf(':');
-            name = "Xtream · " + (colon > 0 ? h.substring(0, colon) : h);
+    /** "http://server.com:8080/x.m3u" -> "server.com" */
+    static String defaultName(String url) {
+        String h = url.replaceFirst("^https?://", "");
+        int cut = h.length();
+        for (char ch : new char[]{':', '/', '?'}) {
+            int i = h.indexOf(ch);
+            if (i > 0 && i < cut) cut = i;
         }
-        prefs.edit().putString("xtream_host", host).apply();
+        h = h.substring(0, cut);
+        return h.isEmpty() ? "Lista" : h;
+    }
+
+    private void finishToMain() {
         hideKeyboard();
-        repo.setXtream(name, url);
-        Toast.makeText(this, "Prijava sačuvana na ovom TV-u.", Toast.LENGTH_SHORT).show();
-
         Intent i = new Intent(this, MainActivity.class);
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(i);
         finish();
+    }
+
+    private void toast(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
     }
 
     private void hideKeyboard() {

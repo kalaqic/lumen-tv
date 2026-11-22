@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -51,7 +52,17 @@ public final class Repo {
 
     public static final class Playlist {
         public final String id, name, url;
+        /** ID liste za svaki link u url-u (istim redom); null = jedna obicna lista. */
+        public List<String> partIds;
+        /** Spajaj iste kanale i kad su u razlicitim listama/kategorijama (profil prijava). */
+        public boolean smartMerge;
         Playlist(String id, String name, String url) { this.id = id; this.name = name; this.url = url; }
+    }
+
+    /** Jedna sacuvana lista: Xtream prijava ili vlastiti M3U link. */
+    public static final class Source {
+        public final String id, name, url;
+        Source(String id, String name, String url) { this.id = id; this.name = name; this.url = url; }
     }
 
     public interface LoadCallback {
@@ -78,6 +89,8 @@ public final class Repo {
     public List<Channel> current = new ArrayList<>();
     public String currentTitle = "";
     public String loadedPlaylistId = null;
+    /** Nazivi lista koje se pri zadnjem ucitavanju nisu mogle skinuti. */
+    public volatile List<String> lastFailed = new ArrayList<>();
 
     private final Set<String> favorites = new LinkedHashSet<>();
     private final List<String> recents = new ArrayList<>();
@@ -99,86 +112,165 @@ public final class Repo {
                 + "/main/playlists/" + code + ".m3u";
     }
 
-    /** Sve besplatne liste spojene u jednu, redom BiH, Srbija, Hrvatska, pa ostale. */
-    public String freeUrl() {
-        StringBuilder sb = new StringBuilder();
-        for (String[] c : COUNTRY_LISTS) {
-            if (sb.length() > 0) sb.append('\n');
-            sb.append(countryListUrl(c[0]));
-        }
-        return sb.toString();
-    }
+    // ---- dva profila: besplatno (javne liste + vlastiti linkovi) i prijave (sve Xtream prijave zajedno)
 
-    /** MODE_FREE, MODE_XTREAM, ili null ako korisnik jos nije izabrao. */
+    /** MODE_FREE, MODE_XTREAM (profil prijava), ili null ako korisnik jos nije izabrao. */
     public String mode() {
         String m = prefs.getString("mode", null);
-        if (MODE_XTREAM.equals(m) && !hasXtream()) return MODE_FREE;
+        if (MODE_XTREAM.equals(m) && logins().isEmpty()) return MODE_FREE;
         if (MODE_XTREAM.equals(m) || MODE_FREE.equals(m)) return m;
         return null;
     }
 
+    /** Aktivan je profil "Moje prijave". */
     public boolean isXtream() { return MODE_XTREAM.equals(mode()); }
-
-    public boolean hasXtream() {
-        String u = prefs.getString("xtream_url", null);
-        return u != null && !u.isEmpty();
-    }
-
-    /** Xtream pristup aktivne prijave (za TV vodic i arhivu); null za besplatne kanale. */
-    public Xtream xtream() {
-        return isXtream() ? Xtream.from(prefs.getString("xtream_url", null)) : null;
-    }
-
-    public String xtreamName() {
-        String n = prefs.getString("xtream_name", null);
-        return n == null || n.isEmpty() ? "Moja prijava" : n;
-    }
 
     public void setFreeMode() {
         prefs.edit().putString("mode", MODE_FREE).apply();
         cleanOldCache();
     }
 
-    /** Sacuva Xtream prijavu (samo na ovom uredaju) i prebaci na nju. */
-    public void setXtream(String name, String url) {
-        prefs.edit().putString("xtream_name", name).putString("xtream_url", url)
-                .putString("mode", MODE_XTREAM).apply();
+    public void setLoginsMode() {
+        if (!logins().isEmpty()) prefs.edit().putString("mode", MODE_XTREAM).apply();
         cleanOldCache();
     }
 
-    /** Prebaci na vec sacuvanu Xtream prijavu. */
-    public void useSavedXtream() {
-        if (hasXtream()) prefs.edit().putString("mode", MODE_XTREAM).apply();
+    /** Sve Xtream prijave (profil "Moje prijave"). */
+    public List<Source> logins() { return readSources("logins"); }
+
+    /** Vlastiti M3U linkovi bez prijave (profil "Besplatni kanali"). */
+    public List<Source> links() { return readSources("links"); }
+
+    /** Dodaj Xtream prijavu; ista prijava (isti server+korisnik) se ne dodaje dvaput. */
+    public Source addLogin(String name, String url) {
+        List<Source> l = logins();
+        Xtream nx = Xtream.from(url);
+        for (Source s : l) {
+            Xtream ox = Xtream.from(s.url);
+            if (s.url.equals(url) || (nx != null && ox != null && nx.host.equalsIgnoreCase(ox.host) && nx.user.equals(ox.user))) {
+                // ista prijava: zamijeni (npr. nova lozinka)
+                Source upd = new Source(s.id, name, url);
+                l.set(l.indexOf(s), upd);
+                writeSources("logins", l);
+                return upd;
+            }
+        }
+        Source src = new Source("x" + System.currentTimeMillis(), name, url);
+        l.add(src);
+        writeSources("logins", l);
+        return src;
     }
 
-    public Playlist active() {
-        if (isXtream()) {
-            String url = prefs.getString("xtream_url", "");
-            return new Playlist("xtream_" + Integer.toHexString(url.hashCode()), xtreamName(), url);
+    public Source addLink(String name, String url) {
+        List<Source> l = links();
+        for (Source s : l) if (s.url.equals(url)) return s;
+        Source src = new Source("m" + System.currentTimeMillis(), name, url);
+        l.add(src);
+        writeSources("links", l);
+        return src;
+    }
+
+    public void removeSource(String id) {
+        for (String key : new String[]{"logins", "links"}) {
+            List<Source> l = readSources(key);
+            for (int i = 0; i < l.size(); i++) {
+                if (l.get(i).id.equals(id)) {
+                    l.remove(i);
+                    writeSources(key, l);
+                    return;
+                }
+            }
         }
-        String url = freeUrl();
-        return new Playlist("free_" + Integer.toHexString(url.hashCode()), "Besplatni kanali", url);
+    }
+
+    /** Xtream prijava iz koje dolazi ovaj link kanala, ili null. */
+    public Xtream xtreamFor(Channel source) {
+        if (source == null || source.listId == null) return null;
+        for (Source s : logins()) if (s.id.equals(source.listId)) return Xtream.from(s.url);
+        return null;
+    }
+
+    /** id liste -> naziv (za filter po listi u meniju). */
+    public Map<String, String> sourceNames() {
+        Map<String, String> m = new LinkedHashMap<>();
+        m.put("free", "Balkanske liste");
+        for (Source s : links()) m.put(s.id, s.name);
+        for (Source s : logins()) m.put(s.id, s.name);
+        return m;
+    }
+
+    public Playlist active() { return profile(isXtream()); }
+
+    /** Plejlista profila: logins=true -> sve prijave, false -> besplatne liste + vlastiti linkovi. */
+    Playlist profile(boolean loginsProfile) {
+        List<String> ids = new ArrayList<>();
+        StringBuilder url = new StringBuilder();
+        Playlist p;
+        if (loginsProfile) {
+            for (Source s : logins()) { append(url, s.url); ids.add(s.id); }
+            String u = url.toString();
+            p = new Playlist("xtream_" + Integer.toHexString((u + "|" + ids).hashCode()), "Moje prijave", u);
+            p.smartMerge = true;
+        } else {
+            for (String[] c : COUNTRY_LISTS) { append(url, countryListUrl(c[0])); ids.add("free:" + c[0]); }
+            for (Source s : links()) { append(url, s.url); ids.add(s.id); }
+            String u = url.toString();
+            p = new Playlist("free_" + Integer.toHexString((u + "|" + ids).hashCode()), "Besplatni kanali", u);
+        }
+        p.partIds = ids;
+        return p;
+    }
+
+    private static void append(StringBuilder sb, String u) {
+        if (sb.length() > 0) sb.append('\n');
+        sb.append(u);
     }
 
     public String activeId() { return active().id; }
 
+    private List<Source> readSources(String key) {
+        List<Source> out = new ArrayList<>();
+        try {
+            JSONArray arr = new JSONArray(prefs.getString(key, "[]"));
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.getJSONObject(i);
+                out.add(new Source(o.getString("id"), o.getString("name"), o.getString("url")));
+            }
+        } catch (Exception ignored) { }
+        return out;
+    }
+
+    private void writeSources(String key, List<Source> l) {
+        JSONArray arr = new JSONArray();
+        try {
+            for (Source s : l) {
+                JSONObject o = new JSONObject();
+                o.put("id", s.id);
+                o.put("name", s.name);
+                o.put("url", s.url);
+                arr.put(o);
+            }
+        } catch (Exception ignored) { }
+        prefs.edit().putString(key, arr.toString()).apply();
+    }
+
     private File cacheFile(Playlist p) {
-        return new File(app.getFilesDir(), "pl_" + Integer.toHexString(p.url.hashCode()) + ".m3u");
+        String key = p.url + "|" + (p.partIds == null ? "" : p.partIds.toString());
+        return new File(app.getFilesDir(), "pl2_" + Integer.toHexString(key.hashCode()) + ".m3u");
     }
 
     /** Obrisi kes starih plejlisti koje se vise ne koriste. */
     private void cleanOldCache() {
         try {
             Set<String> keep = new HashSet<>();
-            keep.add(cacheFile(new Playlist("", "", freeUrl())).getName());
-            String x = prefs.getString("xtream_url", null);
-            if (x != null) keep.add(cacheFile(new Playlist("", "", x)).getName());
+            keep.add(cacheFile(profile(false)).getName());
+            if (!logins().isEmpty()) keep.add(cacheFile(profile(true)).getName());
             File[] files = app.getFilesDir().listFiles();
             if (files == null) return;
             for (File f : files) {
                 String n = f.getName();
                 // samo zavrseni kes fajlovi (.m3u), nikad .part/.combined koji se upravo skidaju
-                if (n.startsWith("pl_") && n.endsWith(".m3u") && !keep.contains(n)) {
+                if ((n.startsWith("pl_") || n.startsWith("pl2_")) && n.endsWith(".m3u") && !keep.contains(n)) {
                     //noinspection ResultOfMethodCallIgnored
                     f.delete();
                 }
@@ -188,6 +280,15 @@ public final class Repo {
 
     /** Prebacivanje sa starog sistema (lista plejlisti) na novi (besplatno / prijava). */
     private void migrateOldSettings() {
+        // jedna sacuvana prijava (verzija prije profila) -> prva prijava u "Moje prijave"
+        String oldX = prefs.getString("xtream_url", null);
+        if (oldX != null && !oldX.isEmpty() && !prefs.contains("logins")) {
+            String n = prefs.getString("xtream_name", null);
+            List<Source> l = new ArrayList<>();
+            l.add(new Source("x1", n == null || n.isEmpty() ? "Moja prijava" : n, oldX));
+            writeSources("logins", l);
+            prefs.edit().remove("xtream_url").remove("xtream_name").apply();
+        }
         if (prefs.contains("mode") || !prefs.contains("playlists")) return;
         String activeId = prefs.getString("active", null);
         String xUrl = null, xName = null;
@@ -207,7 +308,11 @@ public final class Repo {
             }
         } catch (Exception ignored) { }
         SharedPreferences.Editor ed = prefs.edit();
-        if (xUrl != null) ed.putString("xtream_url", xUrl).putString("xtream_name", xName);
+        if (xUrl != null && !prefs.contains("logins")) {
+            List<Source> l = new ArrayList<>();
+            l.add(new Source("x1", xName, xUrl));
+            writeSources("logins", l);
+        }
         if (activeIsXtream) ed.putString("mode", MODE_XTREAM);
         // inace "mode" ostaje prazan pa ce aplikacija jednom ponuditi izbor
         ed.remove("playlists").remove("active").remove("seeded_countries_v1").remove("seeded_v2");
@@ -229,19 +334,19 @@ public final class Repo {
 
                 if (!forceRefresh && haveCache) {
                     try {
-                        result = parseFile(cache);
+                        result = parseFile(cache, p.smartMerge);
                         fromCache = true;
                     } catch (Exception e) { result = null; }
                 }
                 if (result == null || result.isEmpty()) {
                     try {
                         fetchPlaylist(p, cache);
-                        result = parseFile(cache);
+                        result = parseFile(cache, p.smartMerge);
                         fromCache = false;
                     } catch (Exception e) {
                         error = friendlyError(e);
                         if (haveCache) {
-                            try { result = parseFile(cache); fromCache = true; } catch (Exception ignored) { }
+                            try { result = parseFile(cache, p.smartMerge); fromCache = true; } catch (Exception ignored) { }
                         }
                     }
                 }
@@ -274,7 +379,7 @@ public final class Repo {
                     File cache = cacheFile(p);
                     File tmp = new File(app.getFilesDir(), "refresh.tmp");
                     fetchPlaylist(p, tmp);
-                    final List<Channel> res = parseFile(tmp);
+                    final List<Channel> res = parseFile(tmp, p.smartMerge);
                     if (res.isEmpty()) return;
                     //noinspection ResultOfMethodCallIgnored
                     cache.delete();
@@ -292,9 +397,9 @@ public final class Repo {
         });
     }
 
-    private static List<Channel> parseFile(File f) throws Exception {
+    private static List<Channel> parseFile(File f, boolean smartMerge) throws Exception {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"), 64 * 1024)) {
-            return M3uParser.parse(r);
+            return M3uParser.parse(r, smartMerge);
         }
     }
 
@@ -310,20 +415,33 @@ public final class Repo {
 
     /** Skida jednu ili vise M3U plejlisti i spaja ih u jedan fajl. */
     private void fetchPlaylist(Playlist p, File target) throws Exception {
+        fetchPlaylist(p, target, cacheFile(p));
+    }
+
+    /**
+     * @param previous zadnji uspjesno ucitan fajl ovog profila: ako se neka lista sada ne moze
+     *                 skinuti (server privremeno ne radi), njeni kanali se uzmu odatle.
+     */
+    void fetchPlaylist(Playlist p, File target, File previous) throws Exception {
         List<String> urls = urlsOf(p);
-        if (urls.size() <= 1) {
+        boolean marked = p.partIds != null && p.partIds.size() == urls.size();
+        if (urls.size() <= 1 && !marked) {
             download(urls.isEmpty() ? p.url : urls.get(0), target);
             return;
         }
+        Map<String, String> names = sourceNames();
+        List<String> failed = new ArrayList<>();
         File part = new File(app.getFilesDir(), "part.tmp");
         File combined = new File(target.getPath() + ".combined");
         int ok = 0;
         Exception last = null;
         try (OutputStream out = new FileOutputStream(combined)) {
             out.write("#EXTM3U\n".getBytes("UTF-8"));
-            for (String u : urls) {
+            for (int i = 0; i < urls.size(); i++) {
+                String u = urls.get(i);
                 try {
                     download(u, part);
+                    if (marked) out.write(("\n#LUMEN-LIST:" + p.partIds.get(i) + "\n").getBytes("UTF-8"));
                     try (InputStream in = new FileInputStream(part)) {
                         byte[] buf = new byte[64 * 1024];
                         int n;
@@ -333,9 +451,16 @@ public final class Repo {
                     ok++;
                 } catch (Exception e) {
                     last = e;
+                    if (marked) {
+                        String id = p.partIds.get(i);
+                        if (copySection(previous, id, out)) ok++;
+                        String n = names.get(id);
+                        if (n != null && !failed.contains(n)) failed.add(n);
+                    }
                 }
             }
         }
+        lastFailed = failed;
         //noinspection ResultOfMethodCallIgnored
         part.delete();
         if (ok == 0) {
@@ -346,6 +471,30 @@ public final class Repo {
         //noinspection ResultOfMethodCallIgnored
         target.delete();
         if (!combined.renameTo(target)) throw new Exception("Ne mogu sačuvati plejlistu");
+    }
+
+    /** Prepisi dio jedne liste (od njene oznake do sljedece) iz starog fajla. */
+    static boolean copySection(File old, String id, OutputStream out) {
+        if (old == null || !old.exists()) return false;
+        String mark = M3uParser.LIST_MARK + id;
+        boolean in = false, any = false;
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(old), "UTF-8"), 64 * 1024)) {
+            String line;
+            while ((line = r.readLine()) != null) {
+                if (line.startsWith(M3uParser.LIST_MARK)) {
+                    in = line.trim().equals(mark);
+                    if (in && !any) { out.write(("\n" + mark + "\n").getBytes("UTF-8")); any = true; }
+                    continue;
+                }
+                if (in) {
+                    out.write(line.getBytes("UTF-8"));
+                    out.write('\n');
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        return any;
     }
 
     private void download(String url, File target) throws Exception {

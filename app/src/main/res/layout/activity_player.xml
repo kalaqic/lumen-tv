@@ -20,7 +20,7 @@
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="center"
-        android:indeterminateTint="@color/accent_2" />
+        android:indeterminateTint="@color/accent" />
 
     <!-- Pauza (u arhivi) -->
     <TextView
@@ -95,7 +95,7 @@
             android:layout_marginTop="16dp"
             android:tag="medium"
             android:text="▲ ▼  drugi kanal     OK  lista kanala"
-            android:textColor="@color/accent_2"
+            android:textColor="@color/accent"
             android:textSize="13sp" />
     </LinearLayout>
 
@@ -262,7 +262,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:tag="semibold"
-                        android:textColor="@color/accent_2"
+                        android:textColor="@color/accent"
                         android:textSize="15sp" />
 
                     <TextView
@@ -294,7 +294,7 @@
                     android:layout_marginTop="8dp"
                     android:max="1000"
                     android:progressBackgroundTint="#40FFFFFF"
-                    android:progressTint="@color/accent_2" />
+                    android:progressTint="@color/accent" />
 
                 <TextView
                     android:id="@+id/epg_next"
@@ -429,11 +429,18 @@
                 android:visibility="gone" />
         </FrameLayout>
 
+        <!-- tanka linija iznad opisa (bez pozadine koja bi virila preko zaobljenih uglova) -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginStart="24dp"
+            android:layout_marginEnd="24dp"
+            android:background="#1AFFFFFF" />
+
         <TextView
             android:id="@+id/epg_desc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#33000000"
             android:ellipsize="end"
             android:lineSpacingExtra="2dp"
             android:maxLines="4"

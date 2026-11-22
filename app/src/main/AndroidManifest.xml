@@ -52,6 +52,12 @@
             android:theme="@style/Theme.Lumen"
             android:windowSoftInputMode="adjustPan|stateHidden" />
 
+        <activity
+            android:name=".ListsActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen" />
+
         <!-- Za instalaciju skinutih ažuriranja -->
         <provider
             android:name="androidx.core.content.FileProvider"

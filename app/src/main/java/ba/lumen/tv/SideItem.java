@@ -2,7 +2,7 @@ package ba.lumen.tv;
 
 /** Stavka u bocnom meniju. */
 public final class SideItem {
-    public static final int HEADER = 0, ALL = 1, FAVORITES = 2, RECENT = 3, CATEGORY = 4, COUNTRY = 5;
+    public static final int HEADER = 0, ALL = 1, FAVORITES = 2, RECENT = 3, CATEGORY = 4, COUNTRY = 5, LIST = 6;
 
     public final int type;
     public final String key;

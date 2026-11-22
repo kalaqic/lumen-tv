@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.KeyEvent;
 import android.view.View;
@@ -181,6 +182,11 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         super.onResume();
         if (updater == null) return; // activity se zatvara (preusmjereno na izbor izvora)
         updater.onResume();
+        if (shownPlaylistId != null && !shownPlaylistId.equals(repo.activeId())) {
+            // liste ili profil su promijenjeni (npr. uklonjena prijava): ucitaj ponovo
+            load(false);
+            return;
+        }
         boolean loaded = shownPlaylistId != null && shownPlaylistId.equals(repo.loadedPlaylistId)
                 && !repo.all.isEmpty();
         if (!loaded) return;
@@ -226,7 +232,14 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             @Override public void onLoaded(List<Channel> channels, boolean fromCache) {
                 buildSidebar();
                 applyFilter(false);
-                if (!fromCache) toast("Učitano " + nf.format(channels.size()) + " kanala");
+                if (!fromCache) {
+                    List<String> failed = repo.lastFailed;
+                    if (!failed.isEmpty()) {
+                        toast("Nije se učitalo: " + TextUtils.join(", ", failed) + " (server ne odgovara)");
+                    } else {
+                        toast("Učitano " + nf.format(channels.size()) + " kanala");
+                    }
+                }
                 startHealthCheck();
             }
 
@@ -291,7 +304,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         List<SideItem> items = new ArrayList<>();
         if (!xtream) {
             // Besplatno: Balkan (svi), pa BiH, Srbija, Hrvatska, ostale; pa moje; pa kategorije
-            items.add(new SideItem(SideItem.HEADER, null, "Balkan", 0));
+            items.add(new SideItem(SideItem.HEADER, null, repo.links().isEmpty() ? "Balkan" : "Kanali", 0));
             SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
             allItem.icon = R.drawable.ic_globe;
             items.add(allItem);
@@ -302,6 +315,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             }
             items.add(new SideItem(SideItem.HEADER, null, "Moje", 0));
             addLibrary(items);
+            addLists(items, all, false);
             if (cats.size() > 1) {
                 items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
                 for (String k : sortedCategories(cats.keySet(), false)) {
@@ -317,6 +331,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             allItem.icon = R.drawable.ic_grid;
             items.add(allItem);
             addLibrary(items);
+            addLists(items, all, true);
             if (cats.size() > 1) {
                 items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
                 for (String k : sortedCategories(cats.keySet(), true)) {
@@ -346,6 +361,27 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         sideAdapter.selected = sel;
         sideAdapter.setItems(items);
         selected = items.get(sel);
+    }
+
+    /**
+     * Filter po listi: u profilu prijava kad ima vise prijava, u besplatnom kad ima
+     * vlastitih linkova. Lista koja se nije ucitala ostaje vidljiva sa 0 kanala.
+     */
+    private void addLists(List<SideItem> items, List<Channel> all, boolean loginsProfile) {
+        List<Repo.Source> own = loginsProfile ? repo.logins() : repo.links();
+        if (loginsProfile ? own.size() < 2 : own.isEmpty()) return;
+        List<String> ids = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        if (!loginsProfile) { ids.add("free"); names.add("Balkanske liste"); }
+        for (Repo.Source s : own) { ids.add(s.id); names.add(s.name); }
+        items.add(new SideItem(SideItem.HEADER, null, loginsProfile ? "Prijave" : "Liste", 0));
+        for (int i = 0; i < ids.size(); i++) {
+            int n = 0;
+            for (Channel c : all) if (c.inList(ids.get(i))) n++;
+            SideItem it = new SideItem(SideItem.LIST, ids.get(i), names.get(i), n);
+            it.icon = R.drawable.ic_list;
+            items.add(it);
+        }
     }
 
     private void addLibrary(List<SideItem> items) {
@@ -559,6 +595,12 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                     if (!xtream) out = prioritize(out, true);
                     sectionTitle = s.label;
                     break;
+                case SideItem.LIST:
+                    out = new ArrayList<>();
+                    for (Channel c : repo.all) if (c.inList(s.key)) out.add(c);
+                    if (!xtream) out = prioritize(out, true);
+                    sectionTitle = s.label;
+                    break;
                 case SideItem.COUNTRY:
                     out = new ArrayList<>();
                     for (Channel c : repo.all) if (s.key.equals(c.country)) out.add(c);
@@ -567,7 +609,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                     break;
                 default:
                     out = xtream ? new ArrayList<>(repo.all) : prioritize(repo.all, true);
-                    sectionTitle = xtream ? "Svi kanali" : "Svi balkanski kanali";
+                    sectionTitle = xtream || !repo.links().isEmpty() ? "Svi kanali" : "Svi balkanski kanali";
             }
         }
         title.setText(sectionTitle);

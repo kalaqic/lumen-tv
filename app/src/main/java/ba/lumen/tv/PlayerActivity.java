@@ -71,7 +71,9 @@ public class PlayerActivity extends Activity {
     private TextView sourceStatus;
 
     // ---- TV vodic (samo Xtream prijava) i arhiva
+    /** Prijava iz koje je TV vodic trenutnog kanala (svaki kanal moze biti iz druge prijave). */
     private Xtream xtream;
+    private boolean loginsProfile;
     private final ExecutorService epgExec = Executors.newSingleThreadExecutor();
     private List<Xtream.Program> epg = new ArrayList<>();
     private String epgStreamId;
@@ -177,7 +179,7 @@ public class PlayerActivity extends Activity {
         epgList.setLayoutManager(new LinearLayoutManager(this));
         epgList.setAdapter(epgAdapter);
         epgList.setItemAnimator(null);
-        xtream = repo.xtream();
+        loginsProfile = repo.isXtream();
 
         rowAdapter = new RowAdapter();
         panelList.setLayoutManager(new LinearLayoutManager(this));
@@ -486,7 +488,7 @@ public class PlayerActivity extends Activity {
         ovLive.setBackgroundResource(arch ? R.drawable.bg_archive : R.drawable.bg_live);
         ovHint.setText(arch
                 ? "◀ ▶  premotaj      OK  pauza      Nazad  uživo      ▲ ▼  kanal"
-                : xtream != null
+                : loginsProfile
                 ? "▲ ▼  kanal      OK  lista kanala      ▶  program      drži OK  favorit"
                 : "▲ ▼  kanal      OK  lista kanala      drži OK  favorit");
         updateEpgBar();
@@ -531,10 +533,19 @@ public class PlayerActivity extends Activity {
         epgStreamId = null;
         epgLoading = false;
         epgToken++;
-        if (xtream == null) { updateEpgBar(); return; }
-        final String sid = Xtream.streamId(c.url);
-        if (sid == null) { updateEpgBar(); return; }
+        xtream = null;
+        String sid = null;
+        if (loginsProfile) {
+            // prvi izvor kanala koji je iz neke prijave i ima ID kanala
+            for (Channel s : c.allSources()) {
+                Xtream x = repo.xtreamFor(s);
+                String id = Xtream.streamId(s.url);
+                if (x != null && id != null) { xtream = x; sid = id; break; }
+            }
+        }
+        if (xtream == null || sid == null) { xtream = null; updateEpgBar(); return; }
         epgStreamId = sid;
+        final String fsid = sid;
         List<Xtream.Program> cached = xtream.cachedEpg(sid);
         if (cached != null) {
             epg = cached;
@@ -547,7 +558,7 @@ public class PlayerActivity extends Activity {
         epgExec.execute(new Runnable() {
             @Override public void run() {
                 List<Xtream.Program> l;
-                try { l = x.fetchEpg(sid); } catch (Exception e) { l = null; }
+                try { l = x.fetchEpg(fsid); } catch (Exception e) { l = null; }
                 final List<Xtream.Program> res = l;
                 handler.post(new Runnable() {
                     @Override public void run() {
@@ -634,8 +645,8 @@ public class PlayerActivity extends Activity {
 
     private void fillEpgPanel() {
         String msg = null;
-        if (xtream == null) msg = "TV vodič i arhiva su dostupni uz Xtream prijavu.\nBesplatni kanali nemaju TV vodič.";
-        else if (epgStreamId == null) msg = "Za ovaj kanal nema TV vodiča.";
+        if (!loginsProfile) msg = "TV vodič i arhiva su dostupni u profilu „Moje prijave“.\nBesplatni kanali nemaju TV vodič.";
+        else if (xtream == null || epgStreamId == null) msg = "Za ovaj kanal nema TV vodiča.";
         else if (epgLoading) msg = "Učitavam program…";
         else if (epg.isEmpty()) msg = "Server nema program za ovaj kanal.";
         if (msg != null) {
@@ -1051,15 +1062,18 @@ public class PlayerActivity extends Activity {
             if (playingThis) {
                 vh.badge.setVisibility(View.VISIBLE);
                 vh.badge.setText("▶ GLEDAŠ");
-                vh.badge.setBackgroundResource(R.drawable.bg_archive);
+                vh.badge.setTextColor(0xFFFFFFFF);
+                vh.badge.setBackgroundResource(R.drawable.bg_chip_accent);
             } else if (p.isNow(now)) {
                 vh.badge.setVisibility(View.VISIBLE);
                 vh.badge.setText(p.archive ? "UŽIVO · OD POČETKA" : "UŽIVO");
+                vh.badge.setTextColor(0xFFFFFFFF);
                 vh.badge.setBackgroundResource(R.drawable.bg_live);
             } else if (p.isPast(now) && p.archive) {
                 vh.badge.setVisibility(View.VISIBLE);
-                vh.badge.setText("↺ ARHIVA");
-                vh.badge.setBackgroundResource(R.drawable.bg_archive);
+                vh.badge.setText("ARHIVA");
+                vh.badge.setTextColor(0xFFA6AAB2);
+                vh.badge.setBackgroundResource(R.drawable.bg_chip_muted);
             } else {
                 vh.badge.setVisibility(View.GONE);
             }

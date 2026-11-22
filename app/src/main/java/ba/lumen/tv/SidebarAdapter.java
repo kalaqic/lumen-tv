@@ -16,6 +16,10 @@ import java.util.Locale;
 
 public final class SidebarAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
+    /** Ikonice: bijela u fokusu, boja naglaska za izabranu stavku, siva inace. */
+    static final int ICON_FOCUS = 0xFFFFFFFF, ICON_ACTIVE = 0xFF4C8DFF, ICON_IDLE = 0xFF7D828C;
+
+
     public interface Listener {
         void onSideClick(int position);
     }
@@ -69,7 +73,7 @@ public final class SidebarAdapter extends RecyclerView.Adapter<RecyclerView.View
         });
         v.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override public void onFocusChange(View view, boolean hasFocus) {
-                vh.icon.setColorFilter(hasFocus ? 0xFFFFFFFF : (view.isActivated() ? 0xFFF4F6FB : 0xFF8792AD));
+                vh.icon.setColorFilter(hasFocus ? ICON_FOCUS : (view.isActivated() ? ICON_ACTIVE : ICON_IDLE));
             }
         });
         return vh;
@@ -96,7 +100,7 @@ public final class SidebarAdapter extends RecyclerView.Adapter<RecyclerView.View
             vh.icon.setVisibility(View.VISIBLE);
             vh.icon.setImageResource(it.icon != 0 ? it.icon : R.drawable.ic_tag);
             boolean focused = vh.itemView.hasFocus();
-            vh.icon.setColorFilter(focused ? 0xFFFFFFFF : (active ? 0xFFF4F6FB : 0xFF8792AD));
+            vh.icon.setColorFilter(focused ? ICON_FOCUS : (active ? ICON_ACTIVE : ICON_IDLE));
         }
     }
 

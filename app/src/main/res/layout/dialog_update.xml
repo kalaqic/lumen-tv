@@ -12,23 +12,10 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <FrameLayout
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:background="@drawable/bg_chip_accent">
-
-            <ImageView
-                android:layout_width="22dp"
-                android:layout_height="22dp"
-                android:layout_gravity="center"
-                android:src="@drawable/ic_refresh" />
-        </FrameLayout>
-
         <TextView
             android:id="@+id/upd_title"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
             android:layout_weight="1"
             android:tag="bold"
             android:textColor="@color/text"
@@ -52,7 +39,7 @@
         android:layout_marginTop="20dp"
         android:max="100"
         android:progressBackgroundTint="@color/surface_3"
-        android:progressTint="@color/accent_2"
+        android:progressTint="@color/accent"
         android:visibility="gone" />
 
     <LinearLayout
@@ -81,7 +68,7 @@
             android:layout_width="wrap_content"
             android:layout_height="48dp"
             android:layout_marginStart="12dp"
-            android:background="@drawable/bg_button"
+            android:background="@drawable/bg_button_primary"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center"

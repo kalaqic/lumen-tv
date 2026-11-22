@@ -55,7 +55,7 @@ public final class Xtream {
 
     /** Iz sacuvanog get.php linka; null ako link nije Xtream. */
     public static Xtream from(String getPhpUrl) {
-        if (getPhpUrl == null || !getPhpUrl.contains("get.php")) return null;
+        if (getPhpUrl == null || !(getPhpUrl.contains("get.php") || getPhpUrl.contains("player_api.php"))) return null;
         try {
             URL u = new URL(getPhpUrl);
             String host = u.getProtocol() + "://" + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");

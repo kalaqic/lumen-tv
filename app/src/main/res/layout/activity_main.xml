@@ -24,23 +24,9 @@
             android:orientation="horizontal"
             android:paddingStart="8dp">
 
-            <FrameLayout
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:background="@drawable/bg_chip_accent">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:layout_gravity="center"
-                    android:layout_marginStart="1dp"
-                    android:src="@drawable/ic_play" />
-            </FrameLayout>
-
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
                 android:tag="bold"
                 android:text="Lumen"
                 android:textColor="@color/text"
@@ -52,7 +38,7 @@
                 android:layout_marginStart="5dp"
                 android:tag="medium"
                 android:text="TV"
-                android:textColor="@color/accent_2"
+                android:textColor="@color/text_3"
                 android:textSize="22sp" />
         </LinearLayout>
 
@@ -95,7 +81,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:duplicateParentState="true"
-                    android:text="Promijeni izvor"
+                    android:text="Promijeni profil ili liste"
                     android:textColor="@color/side_count"
                     android:textSize="11sp" />
             </LinearLayout>
@@ -104,7 +90,7 @@
                 android:layout_width="18dp"
                 android:layout_height="18dp"
                 android:layout_marginStart="8dp"
-                android:alpha="0.7"
+                android:alpha="0.6"
                 android:src="@drawable/ic_list" />
         </LinearLayout>
 
@@ -219,7 +205,7 @@
                 android:layout_marginStart="10dp"
                 android:background="@drawable/bg_button"
                 android:clickable="true"
-                android:drawableStart="@drawable/ic_refresh"
+                android:drawableStart="@drawable/ic_download"
                 android:drawablePadding="8dp"
                 android:focusable="true"
                 android:gravity="center"
@@ -265,7 +251,7 @@
                     android:id="@+id/progress"
                     android:layout_width="48dp"
                     android:layout_height="48dp"
-                    android:indeterminateTint="@color/accent_2" />
+                    android:indeterminateTint="@color/accent" />
 
                 <TextView
                     android:id="@+id/state_title"

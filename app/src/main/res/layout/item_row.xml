@@ -79,6 +79,6 @@
         android:layout_height="18dp"
         android:layout_marginStart="8dp"
         android:src="@drawable/ic_play"
-        android:tint="@color/accent_2"
+        android:tint="@color/accent"
         android:visibility="gone" />
 </LinearLayout>

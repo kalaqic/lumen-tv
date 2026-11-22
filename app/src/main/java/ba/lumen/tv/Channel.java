@@ -25,6 +25,7 @@ public final class Channel {
     public String searchKey = "";  // mala slova bez dijakritika
     public boolean geoBlocked;     // iptv-org oznaka [Geo-blocked]
     public boolean balkan;         // kanal sa Balkana (BA, HR, RS, ME, SI, MK, XK)
+    public String listId;          // iz koje sacuvane liste je ovaj link (null = nepoznato)
     /** Svi linkovi ovog kanala, redom iz plejliste (prvi je ovaj objekat). Null = samo ovaj link. */
     public List<Channel> sources;
 
@@ -32,6 +33,16 @@ public final class Channel {
     public List<Channel> allSources() {
         if (sources == null || sources.isEmpty()) return Collections.singletonList(this);
         return sources;
+    }
+
+    /** Kanal ima bar jedan izvor iz date liste ("free" obuhvata i "free:ba", "free:rs"...). */
+    public boolean inList(String id) {
+        if (id == null) return false;
+        for (Channel s : allSources()) {
+            String l = s.listId;
+            if (l != null && (l.equals(id) || (l.startsWith(id) && l.length() > id.length() && l.charAt(id.length()) == ':'))) return true;
+        }
+        return false;
     }
 
     public int sourceCount() {

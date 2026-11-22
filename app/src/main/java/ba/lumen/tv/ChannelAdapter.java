@@ -65,10 +65,10 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
         });
         v.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override public void onFocusChange(View view, boolean hasFocus) {
-                Ui.focusAnim(view, hasFocus, 1.09f);
+                Ui.focusAnim(view, hasFocus, 1.05f);
                 vh.name.setEllipsize(hasFocus ? TextUtils.TruncateAt.MARQUEE : TextUtils.TruncateAt.END);
                 vh.name.setSelected(hasFocus);
-                vh.meta.setTextColor(hasFocus ? 0xFFA3AECA : 0xFF64708A);
+                vh.meta.setTextColor(hasFocus ? 0xFFA6AAB2 : 0xFF6C717B);
             }
         });
         return vh;

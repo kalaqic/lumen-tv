@@ -24,6 +24,37 @@ public final class M3uParser {
     private static final Pattern COUNTRY = Pattern.compile("\\.([a-z]{2})(?:@|$)");
     private static final Pattern MARKS = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
 
+    /** Oznaka koju Repo upise ispred svake liste kad spaja vise lista u jedan fajl. */
+    static final String LIST_MARK = "#LUMEN-LIST:";
+
+    /** Prefiks drzave u nazivu: "BA: ", "|SRB| ", "[HR] ", "EX-YU - " ... */
+    private static final Pattern NAME_PREFIX = Pattern.compile(
+            "^[\\[(|]?\\s*(EX-?YU|[A-Za-z]{2,3})\\s*[\\])|:\\-]+\\s*(?=\\S)");
+    /** Oznake kvaliteta/kodeka koje ne mijenjaju koji je to kanal. */
+    private static final Set<String> QUALITY_WORDS = new HashSet<>(Arrays.asList(
+            "hd", "fhd", "uhd", "sd", "hq", "lq", "4k", "8k", "hevc", "h265", "h264", "x265",
+            "1080p", "1080i", "720p", "576p", "576i", "480p", "2160p", "50fps", "60fps", "fps",
+            "raw", "backup", "bkp", "multi", "audio", "tv"));
+    private static final Map<String, String> PREFIX_CODES = new HashMap<>();
+    static {
+        String[][] m = {
+                {"BA", "BA"}, {"BIH", "BA"}, {"BH", "BA"},
+                {"RS", "RS"}, {"SRB", "RS"},
+                {"HR", "HR"}, {"HRV", "HR"}, {"CRO", "HR"},
+                {"ME", "ME"}, {"MNE", "ME"}, {"CG", "ME"},
+                {"SI", "SI"}, {"SLO", "SI"},
+                {"MK", "MK"}, {"MKD", "MK"},
+                {"EXYU", "EXYU"}, {"YU", "EXYU"},
+                {"UK", "GB"}, {"GB", "GB"}, {"US", "US"}, {"USA", "US"}, {"DE", "DE"}, {"GER", "DE"},
+                {"AT", "AT"}, {"CH", "CH"}, {"FR", "FR"}, {"IT", "IT"}, {"ES", "ES"}, {"TR", "TR"},
+                {"NL", "NL"}, {"PL", "PL"}, {"AL", "AL"}, {"RO", "RO"}, {"HU", "HU"}, {"BG", "BG"},
+                {"GR", "GR"}, {"PT", "PT"}, {"SE", "SE"}, {"DK", "DK"}, {"NO", "NO"}, {"CZ", "CZ"},
+                {"SK", "SK"}, {"RU", "RU"}, {"AR", "AR"}, {"IN", "IN"}, {"CA", "CA"}, {"AU", "AU"},
+                {"XK", "XK"}, {"KS", "XK"}
+        };
+        for (String[] e : m) PREFIX_CODES.put(e[0], e[1]);
+    }
+
     private static final Set<String> BALKAN = new HashSet<>(Arrays.asList("BA", "HR", "RS", "ME", "SI", "MK", "XK"));
 
     private M3uParser() {}
@@ -39,7 +70,16 @@ public final class M3uParser {
     }
 
     public static List<Channel> parse(BufferedReader reader) throws IOException {
+        return parse(reader, false);
+    }
+
+    /**
+     * @param smartMerge spoji isti kanal i kad je u razlicitim listama/kategorijama
+     *                   (profil "Moje prijave"), inace samo unutar iste kategorije.
+     */
+    public static List<Channel> parse(BufferedReader reader, boolean smartMerge) throws IOException {
         List<Channel> out = new ArrayList<>();
+        String listId = null;
         Set<String> seenUrls = new HashSet<>();
         Channel cur = null;
         String line;
@@ -64,6 +104,11 @@ public final class M3uParser {
                 if (cur != null && cur.groups.length == 0) {
                     cur.groups = splitGroups(line.substring(8));
                 }
+            } else if (line.startsWith(LIST_MARK)) {
+                // nova lista pocinje: linkovi poslije ovoga su iz nje
+                String id = line.substring(LIST_MARK.length()).trim();
+                listId = id.isEmpty() ? null : id;
+                cur = null;
             } else if (line.charAt(0) == '#') {
                 // ostali tagovi se ignorisu
             } else {
@@ -84,11 +129,12 @@ public final class M3uParser {
                 if (cur.groups.length == 0) cur.groups = new String[]{"Undefined"};
                 cur.searchKey = normalize(cur.name);
                 cur.balkan = isBalkan(cur);
+                cur.listId = listId;
                 if (!cur.url.isEmpty() && seenUrls.add(cur.url)) out.add(cur);
                 cur = null;
             }
         }
-        return group(out);
+        return smartMerge ? groupSmart(out) : group(out);
     }
 
     /**
@@ -115,6 +161,94 @@ public final class M3uParser {
             }
         }
         return new ArrayList<>(byKey.values());
+    }
+
+    /**
+     * Spajanje za profil prijava: isti kanal iz razlicitih lista (ili kategorija) postaje
+     * jedan kanal sa vise izvora. Kljuc je naziv bez oznaka kvaliteta i prefiksa drzave,
+     * plus drzava (iz prefiksa, kategorije ili tvg-country), da se npr. "Arena Sport 1"
+     * za BiH i za Srbiju ne pomijesaju.
+     */
+    static List<Channel> groupSmart(List<Channel> list) {
+        Map<String, Channel> byKey = new LinkedHashMap<>();
+        for (Channel c : list) {
+            String k = smartKey(c);
+            Channel first = byKey.get(k);
+            if (first == null) {
+                c.sources = Channel.newSourceList(c);
+                c.bestQuality = c.quality;
+                byKey.put(k, c);
+            } else {
+                first.sources.add(c);
+                if (first.logo == null && c.logo != null) first.logo = c.logo;
+                if (first.tvgId == null && c.tvgId != null) first.tvgId = c.tvgId;
+                if (first.country == null && c.country != null) first.country = c.country;
+                if (!first.balkan && c.balkan) first.balkan = true;
+                if (Channel.qualityValue(c.quality) > Channel.qualityValue(first.bestQuality)) {
+                    first.bestQuality = c.quality;
+                }
+                // kanal se vidi u kategorijama svih lista iz kojih dolazi
+                List<String> g = new ArrayList<>(Arrays.asList(first.groups));
+                boolean added = false;
+                for (String x : c.groups) {
+                    if (!"Undefined".equals(x) && !g.contains(x)) { g.add(x); added = true; }
+                }
+                if (added) {
+                    g.remove("Undefined");
+                    first.groups = g.toArray(new String[0]);
+                }
+            }
+        }
+        return new ArrayList<>(byKey.values());
+    }
+
+    static String smartKey(Channel c) {
+        String name = c.name == null ? "" : c.name.trim();
+        String region = null;
+        // prefiks drzave moze biti i dvostruk ("|EX-YU| BA: ...") - zadnji je najtacniji
+        for (int i = 0; i < 2; i++) {
+            Matcher m = NAME_PREFIX.matcher(name);
+            if (!m.find()) break;
+            String code = PREFIX_CODES.get(m.group(1).toUpperCase(Locale.ROOT).replace("-", ""));
+            if (code == null) break;
+            if (region == null || !"EXYU".equals(code)) region = code;
+            name = name.substring(m.end());
+        }
+        if (region == null || "EXYU".equals(region)) {
+            String fromGroup = regionOfGroups(c.groups);
+            if (fromGroup != null) region = fromGroup;
+        }
+        if (region == null || "EXYU".equals(region)) {
+            if (c.country != null) region = c.country;
+        }
+        StringBuilder k = new StringBuilder();
+        for (String w : normalize(name).split("[^a-z0-9+]+")) {
+            if (w.isEmpty() || QUALITY_WORDS.contains(w)) continue;
+            if (k.length() > 0) k.append(' ');
+            k.append(w);
+        }
+        String key = k.length() == 0 ? normalize(name) : k.toString();
+        return key + "|" + (region == null ? "" : region);
+    }
+
+    /** Drzava iz naziva kategorije ("BIH", "Srbija HD", "HRVATSKA" ...), ili null. */
+    static String regionOfGroups(String[] groups) {
+        for (String g : groups) {
+            Set<String> t = new HashSet<>(Arrays.asList(
+                    normalize(g).toUpperCase(Locale.ROOT).split("[^A-Z0-9]+")));
+            if (has(t, "BIH", "BA", "BOSNA", "BOSNIA", "BOSANSKI", "FBIH")) return "BA";
+            if (has(t, "SRB", "RS", "SRBIJA", "SERBIA", "SRPSKI")) return "RS";
+            if (has(t, "HR", "HRV", "CRO", "HRVATSKA", "CROATIA", "HRVATSKI")) return "HR";
+            if (has(t, "CG", "MNE", "MONTENEGRO", "CRNA")) return "ME";
+            if (has(t, "SLO", "SLOVENIJA", "SLOVENIA")) return "SI";
+            if (has(t, "MK", "MKD", "MAKEDONIJA", "MACEDONIA")) return "MK";
+        }
+        return null;
+    }
+
+    private static boolean has(Set<String> t, String... words) {
+        for (String w : words) if (t.contains(w)) return true;
+        return false;
     }
 
     static Channel parseInf(String line) {
