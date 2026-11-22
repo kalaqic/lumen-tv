@@ -392,13 +392,22 @@ public final class Repo {
 
     // ------------------------------------------------------------------ favoriti i historija
 
-    public boolean isFavorite(Channel c) { return favorites.contains(c.url); }
+    /** Kanal je favorit ako je bilo koji njegov izvor sacuvan kao favorit. */
+    public boolean isFavorite(Channel c) {
+        for (Channel s : c.allSources()) if (favorites.contains(s.url)) return true;
+        return false;
+    }
 
     /** @return true ako je kanal sada favorit */
     public boolean toggleFavorite(Channel c) {
         boolean now;
-        if (favorites.contains(c.url)) { favorites.remove(c.url); now = false; }
-        else { favorites.add(c.url); now = true; }
+        if (isFavorite(c)) {
+            for (Channel s : c.allSources()) favorites.remove(s.url);
+            now = false;
+        } else {
+            favorites.add(c.url);
+            now = true;
+        }
         writeList("favorites", favorites);
         return now;
     }
@@ -406,7 +415,7 @@ public final class Repo {
     public int favoriteCount() { return favorites.size(); }
 
     public void addRecent(Channel c) {
-        recents.remove(c.url);
+        for (Channel s : c.allSources()) recents.remove(s.url);
         recents.add(0, c.url);
         while (recents.size() > 40) recents.remove(recents.size() - 1);
         writeList("recents", recents);
@@ -414,18 +423,19 @@ public final class Repo {
 
     public List<Channel> favoriteChannels() {
         List<Channel> out = new ArrayList<>();
-        for (Channel c : all) if (favorites.contains(c.url)) out.add(c);
+        for (Channel c : all) if (isFavorite(c)) out.add(c);
         return out;
     }
 
     public List<Channel> recentChannels() {
+        // svaki izvor vodi na svoj kanal
         Map<String, Channel> byUrl = new HashMap<>();
-        for (Channel c : all) byUrl.put(c.url, c);
+        for (Channel c : all) for (Channel s : c.allSources()) byUrl.put(s.url, c);
         List<Channel> out = new ArrayList<>();
-        Set<String> seen = new HashSet<>();
+        Set<Channel> seen = new HashSet<>();
         for (String u : recents) {
             Channel c = byUrl.get(u);
-            if (c != null && seen.add(u)) out.add(c);
+            if (c != null && seen.add(c)) out.add(c);
         }
         return out;
     }

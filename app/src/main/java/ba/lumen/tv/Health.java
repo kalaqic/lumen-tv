@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class Health {
 
     public static final int UNKNOWN = 0, ONLINE = 1, OFFLINE = 2, BLOCKED = 3;
-    private static final long TTL = 6L * 60 * 60 * 1000;       // rezultat vazi 6 sati
+    private static final long TTL = 60L * 60 * 1000;           // rezultat vazi 1 sat (streamovi se cesto mijenjaju)
     private static final int THREADS = 6;
 
     public interface Progress {
@@ -92,7 +92,9 @@ public final class Health {
         final int gen = generation;
         final List<Channel> todo = new ArrayList<>();
         for (Channel c : channels) {
-            if (status(c.url) == UNKNOWN && c.url.toLowerCase().startsWith("http")) todo.add(c);
+            for (Channel s : c.allSources()) {   // provjeri svaki izvor kanala
+                if (status(s.url) == UNKNOWN && s.url.toLowerCase().startsWith("http")) todo.add(s);
+            }
         }
         final int total = todo.size();
         if (total == 0) {
@@ -141,11 +143,35 @@ public final class Health {
         }
     }
 
-    /** Rang za sortiranje: manji broj = vise na vrhu. */
-    public int rank(Channel c) {
-        int s = status(c.url);
+    /**
+     * Status kanala sa vise izvora: radi ako radi bar jedan izvor; ne radi samo ako su svi
+     * izvori provjereni i nijedan ne radi; inace nepoznato.
+     */
+    public int statusOf(Channel c) {
+        boolean unknown = false, blocked = false;
+        for (Channel s : c.allSources()) {
+            int st = status(s.url);
+            if (st == ONLINE) return ONLINE;
+            if (st == UNKNOWN) unknown = true;
+            else if (st == BLOCKED) blocked = true;
+        }
+        if (unknown) return UNKNOWN;
+        return blocked ? BLOCKED : OFFLINE;
+    }
+
+    /** Rang jednog izvora (linka): manji broj = proba se ranije. */
+    public int rank(Channel source) {
+        int s = status(source.url);
         if (s == ONLINE) return 0;
-        if (s == UNKNOWN) return c.geoBlocked ? 2 : 1;
+        if (s == UNKNOWN) return source.geoBlocked ? 2 : 1;
+        return 3;
+    }
+
+    /** Rang kanala za sortiranje u mrezi: manji broj = vise na vrhu. */
+    public int rankChannel(Channel c) {
+        int s = statusOf(c);
+        if (s == ONLINE) return 0;
+        if (s == UNKNOWN) return c.allGeoBlocked() ? 2 : 1;
         return 3;
     }
 }

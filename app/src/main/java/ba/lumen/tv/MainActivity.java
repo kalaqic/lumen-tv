@@ -608,7 +608,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     }
 
     private int rank(Channel c, boolean byCountry) {
-        int r = health.rank(c);
+        int r = health.rankChannel(c);
         if (byCountry) {
             int i = c.country == null ? -1 : PINNED.indexOf(c.country);
             r += (i < 0 ? PINNED.size() : i) * 10;

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.Map;
@@ -87,29 +88,33 @@ public final class M3uParser {
                 cur = null;
             }
         }
-        markVariants(out);
-        return out;
+        return group(out);
     }
 
-    /** Oznaci kanale istog naziva (i iste grupe) kao Izvor 1/N, 2/N… */
-    static void markVariants(List<Channel> list) {
-        Map<String, Integer> totals = new HashMap<>();
+    /**
+     * Spoji linkove istog kanala (isti naziv, ista grupa, ista drzava) u jedan kanal.
+     * Redoslijed kanala ostaje kao u plejlisti; izvori unutar kanala takodje.
+     */
+    static List<Channel> group(List<Channel> list) {
+        Map<String, Channel> byKey = new LinkedHashMap<>();
         for (Channel c : list) {
-            String k = c.searchKey + "|" + c.primaryGroup();
-            Integer n = totals.get(k);
-            totals.put(k, n == null ? 1 : n + 1);
+            String k = c.searchKey + "|" + c.primaryGroup().toLowerCase(Locale.ROOT) + "|"
+                    + (c.country == null ? "" : c.country);
+            Channel first = byKey.get(k);
+            if (first == null) {
+                c.sources = Channel.newSourceList(c);
+                c.bestQuality = c.quality;
+                byKey.put(k, c);
+            } else {
+                first.sources.add(c);
+                if (first.logo == null && c.logo != null) first.logo = c.logo;
+                if (first.tvgId == null && c.tvgId != null) first.tvgId = c.tvgId;
+                if (Channel.qualityValue(c.quality) > Channel.qualityValue(first.bestQuality)) {
+                    first.bestQuality = c.quality;
+                }
+            }
         }
-        Map<String, Integer> seen = new HashMap<>();
-        for (Channel c : list) {
-            String k = c.searchKey + "|" + c.primaryGroup();
-            int total = totals.get(k);
-            if (total < 2) continue;
-            Integer n = seen.get(k);
-            int idx = n == null ? 1 : n + 1;
-            seen.put(k, idx);
-            c.variant = idx;
-            c.variantCount = total;
-        }
+        return new ArrayList<>(byKey.values());
     }
 
     static Channel parseInf(String line) {

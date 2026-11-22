@@ -29,6 +29,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -58,6 +59,22 @@ public class PlayerActivity extends Activity {
 
     private boolean triedAsHls = false;
     private int playToken = 0;
+
+    /** Izvor koji ne krene za ovoliko vremena smatra se neispravnim -> probaj sljedeci. */
+    private static final long START_TIMEOUT_MS = 15000;
+    /** Izvori kanala koji se trenutno pusta, redom kako se probaju. */
+    private List<Channel> sources = new ArrayList<>();
+    private int sourceIdx = 0;
+    private Channel currentSource;
+    private TextView sourceStatus;
+
+    private final Runnable watchdog = new Runnable() {
+        @Override public void run() {
+            if (player == null || currentSource == null) return;
+            if (player.getPlaybackState() == Player.STATE_READY) return;
+            onSourceFailed(Health.OFFLINE, "Stream ne odgovara.");
+        }
+    };
     private final ExecutorService probeExec = Executors.newSingleThreadExecutor();
     /** url -> otkriveni mime tip ("" = obicni stream / TS) */
     private static final Map<String, String> PROBED = new HashMap<>();
@@ -102,6 +119,7 @@ public class PlayerActivity extends Activity {
         panelTitle = findViewById(R.id.panel_title);
         panelSub = findViewById(R.id.panel_sub);
         panelList = findViewById(R.id.panel_list);
+        sourceStatus = findViewById(R.id.source_status);
 
         rowAdapter = new RowAdapter();
         panelList.setLayoutManager(new LinearLayoutManager(this));
@@ -123,6 +141,7 @@ public class PlayerActivity extends Activity {
     protected void onStop() {
         super.onStop();
         handler.removeCallbacks(playPending);
+        handler.removeCallbacks(watchdog);
         releasePlayer();
     }
 
@@ -165,10 +184,12 @@ public class PlayerActivity extends Activity {
                 if (state == Player.STATE_BUFFERING) {
                     buffering.setVisibility(View.VISIBLE);
                 } else if (state == Player.STATE_READY) {
+                    handler.removeCallbacks(watchdog);
                     buffering.setVisibility(View.GONE);
                     errorView.setVisibility(View.GONE);
-                    if (playingIndex >= 0 && playingIndex < list.size()) {
-                        Health.get(PlayerActivity.this).set(list.get(playingIndex).url, Health.ONLINE);
+                    sourceStatus.setVisibility(View.GONE);
+                    if (currentSource != null) {
+                        Health.get(PlayerActivity.this).set(currentSource.url, Health.ONLINE);
                     }
                 } else if (state == Player.STATE_ENDED) {
                     // live stream ne bi trebao zavrsiti – pokusaj ponovo
@@ -190,49 +211,111 @@ public class PlayerActivity extends Activity {
             player.release();
             player = null;
         }
+        handler.removeCallbacks(watchdog);
         playingIndex = -1;
+        currentSource = null;
     }
 
     private void play(int i) {
         if (player == null || list.isEmpty()) return;
+        handler.removeCallbacks(watchdog);
         index = i;
         Channel c = list.get(i);
         playingIndex = i;
-        triedAsHls = false;
+        sources = orderedSources(c);
+        sourceIdx = 0;
         errorView.setVisibility(View.GONE);
+        sourceStatus.setVisibility(View.GONE);
         buffering.setVisibility(View.VISIBLE);
         showInfo(c);
         repo.addRecent(c);
         rowAdapter.notifyDataSetChanged();
+        playSource();
+    }
+
+    /** Izvori kanala: prvo oni za koje se zna da rade, pa neprovjereni, pa neispravni (stabilno). */
+    private List<Channel> orderedSources(Channel c) {
+        final Health h = Health.get(this);
+        List<Channel> out = new ArrayList<>(c.allSources());
+        Collections.sort(out, new java.util.Comparator<Channel>() {
+            @Override public int compare(Channel a, Channel b) { return h.rank(a) - h.rank(b); }
+        });
+        return out;
+    }
+
+    /** Pusti trenutni izvor (sources[sourceIdx]). */
+    private void playSource() {
+        if (player == null || sources.isEmpty()) return;
+        handler.removeCallbacks(watchdog);
+        final Channel s = sources.get(sourceIdx);
+        currentSource = s;
+        triedAsHls = false;
+        ovNumber.setText(numberText());
 
         final int token = ++playToken;
-        String known = mimeFromUrl(c.url);
+        String known = mimeFromUrl(s.url);
         String cached;
-        synchronized (PROBED) { cached = PROBED.get(c.url); }
-        if (known != null || !c.url.toLowerCase(Locale.ROOT).startsWith("http")) {
-            startStream(c, known);
+        synchronized (PROBED) { cached = PROBED.get(s.url); }
+        if (known != null || !s.url.toLowerCase(Locale.ROOT).startsWith("http")) {
+            startStream(s, known);
         } else if (repo.isXtream()) {
             // Xtream: bez probne konekcije (server cesto dozvoljava samo 1 konekciju);
             // live kanali su MPEG-TS, a ako ne uspije, plejer sam proba kao HLS
-            startStream(c, null);
+            startStream(s, null);
         } else if (cached != null) {
-            startStream(c, cached.isEmpty() ? null : cached);
+            startStream(s, cached.isEmpty() ? null : cached);
         } else {
             // link bez ekstenzije (npr. play.php?stream=…): prvo provjeri sta server zaista vraca
-            final Channel ch = c;
             probeExec.execute(new Runnable() {
                 @Override public void run() {
-                    final String mime = StreamProbe.detect(ch);
-                    if (mime != null) synchronized (PROBED) { PROBED.put(ch.url, mime); }
+                    final String mime = StreamProbe.detect(s);
+                    if (mime != null) synchronized (PROBED) { PROBED.put(s.url, mime); }
                     handler.post(new Runnable() {
                         @Override public void run() {
                             if (token != playToken || player == null) return;
-                            startStream(ch, mime == null || mime.isEmpty() ? null : mime);
+                            startStream(s, mime == null || mime.isEmpty() ? null : mime);
                         }
                     });
                 }
             });
         }
+    }
+
+    /** Trenutni izvor ne radi: zapamti to i probaj sljedeci; kad nema vise izvora, prikazi gresku. */
+    private void onSourceFailed(int status, String reason) {
+        handler.removeCallbacks(watchdog);
+        if (currentSource != null) Health.get(this).set(currentSource.url, status);
+        if (player == null || playingIndex < 0) return;
+
+        if (sourceIdx + 1 < sources.size()) {
+            int failedNo = sourceIdx + 1;
+            sourceIdx++;
+            sourceStatus.setText("Izvor " + failedNo + " ne radi  ·  probam izvor " + (sourceIdx + 1)
+                    + " od " + sources.size() + "…");
+            sourceStatus.setVisibility(View.VISIBLE);
+            errorView.setVisibility(View.GONE);
+            buffering.setVisibility(View.VISIBLE);
+            playSource();
+            return;
+        }
+
+        player.stop();
+        buffering.setVisibility(View.GONE);
+        sourceStatus.setVisibility(View.GONE);
+        errorView.setVisibility(View.VISIBLE);
+        errorText.setText(sources.size() > 1
+                ? reason + "\nProbano svih " + sources.size() + " izvora ovog kanala."
+                : reason);
+        showInfo(list.get(playingIndex));
+        rowAdapter.notifyItemChanged(playingIndex);
+    }
+
+    private String numberText() {
+        String t = (index + 1) + " / " + list.size();
+        if (index == playingIndex && sources.size() > 1) {
+            t += "   ·   izvor " + (sourceIdx + 1) + "/" + sources.size();
+        }
+        return t;
     }
 
     private static String mimeFromUrl(String url) {
@@ -263,6 +346,8 @@ public class PlayerActivity extends Activity {
         player.setMediaItem(b.build());
         player.prepare();
         player.setPlayWhenReady(true);
+        handler.removeCallbacks(watchdog);
+        handler.postDelayed(watchdog, START_TIMEOUT_MS);
     }
 
     private static String originOf(String url) {
@@ -275,8 +360,8 @@ public class PlayerActivity extends Activity {
     }
 
     private void handleError(PlaybackException error) {
-        if (player == null || playingIndex < 0) return;
-        Channel c = list.get(playingIndex);
+        if (player == null || playingIndex < 0 || currentSource == null) return;
+        Channel s = currentSource;
         if (error.errorCode == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) {
             player.seekToDefaultPosition();
             player.prepare();
@@ -286,20 +371,16 @@ public class PlayerActivity extends Activity {
                 || error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED
                 || error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED;
         String probed;
-        synchronized (PROBED) { probed = PROBED.get(c.url); }
-        boolean alreadyHls = MimeTypes.APPLICATION_M3U8.equals(probed) || MimeTypes.APPLICATION_M3U8.equals(mimeFromUrl(c.url));
+        synchronized (PROBED) { probed = PROBED.get(s.url); }
+        boolean alreadyHls = MimeTypes.APPLICATION_M3U8.equals(probed) || MimeTypes.APPLICATION_M3U8.equals(mimeFromUrl(s.url));
         if (!triedAsHls && formatProblem && !alreadyHls) {
             // mnogi linkovi bez ekstenzije su zapravo HLS
             triedAsHls = true;
-            startStream(c, MimeTypes.APPLICATION_M3U8);
+            startStream(s, MimeTypes.APPLICATION_M3U8);
             return;
         }
-        buffering.setVisibility(View.GONE);
-        errorView.setVisibility(View.VISIBLE);
-        errorText.setText(describe(error));
-        Health.get(this).set(c.url, error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-                ? Health.BLOCKED : Health.OFFLINE);
-        showInfo(c);
+        onSourceFailed(error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+                ? Health.BLOCKED : Health.OFFLINE, describe(error));
     }
 
     private static String describe(PlaybackException e) {
@@ -318,10 +399,11 @@ public class PlayerActivity extends Activity {
     private void showInfo(Channel c) {
         ovName.setText(c.name);
         ovMeta.setText(ChannelAdapter.meta(c) + (c.country != null ? "  ·  " + Labels.countryName(c.country) : ""));
-        ovNumber.setText((index + 1) + " / " + list.size());
-        if (c.quality != null) {
+        ovNumber.setText(numberText());
+        String q = c.displayQuality();
+        if (q != null) {
             ovQuality.setVisibility(View.VISIBLE);
-            ovQuality.setText(c.quality.toUpperCase(Locale.ROOT));
+            ovQuality.setText(q.toUpperCase(Locale.ROOT));
         } else {
             ovQuality.setVisibility(View.GONE);
         }
@@ -339,6 +421,7 @@ public class PlayerActivity extends Activity {
         index = (index + delta + list.size()) % list.size();
         showInfo(list.get(index));
         handler.removeCallbacks(playPending);
+        handler.removeCallbacks(watchdog);
         playToken++;
         handler.postDelayed(playPending, 450);
     }
@@ -495,7 +578,8 @@ public class PlayerActivity extends Activity {
             Channel c = list.get(position);
             vh.number.setText(String.valueOf(position + 1));
             vh.name.setText(repo.isFavorite(c) ? "★ " + c.name : c.name);
-            vh.meta.setText(ChannelAdapter.meta(c) + (c.quality != null ? "  ·  " + c.quality : ""));
+            String q = c.displayQuality();
+            vh.meta.setText(ChannelAdapter.meta(c) + (q != null ? "  ·  " + q : ""));
             vh.playing.setVisibility(position == playingIndex ? View.VISIBLE : View.GONE);
             Logos.bind(vh.logo, vh.initials, c);
         }

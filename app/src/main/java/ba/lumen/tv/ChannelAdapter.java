@@ -79,14 +79,15 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
         Channel c = items.get(position);
         vh.name.setText(c.name);
         vh.meta.setText(meta(c));
-        if (c.quality != null) {
+        String q = c.displayQuality();
+        if (q != null) {
             vh.quality.setVisibility(View.VISIBLE);
-            vh.quality.setText(c.quality.toUpperCase());
+            vh.quality.setText(q.toUpperCase());
         } else {
             vh.quality.setVisibility(View.GONE);
         }
         vh.fav.setVisibility(repo.isFavorite(c) ? View.VISIBLE : View.GONE);
-        int st = Health.get(vh.itemView.getContext()).status(c.url);
+        int st = Health.get(vh.itemView.getContext()).statusOf(c);
         vh.onlineDot.setVisibility(st == Health.ONLINE ? View.VISIBLE : View.GONE);
         if (st == Health.OFFLINE || st == Health.BLOCKED) {
             vh.status.setVisibility(View.VISIBLE);
@@ -94,7 +95,7 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
             vh.status.setBackgroundResource(R.drawable.bg_status_bad);
             vh.logoBox.setAlpha(0.4f);
             vh.name.setAlpha(0.55f);
-        } else if (st == Health.UNKNOWN && c.geoBlocked) {
+        } else if (st == Health.UNKNOWN && c.allGeoBlocked()) {
             vh.status.setVisibility(View.VISIBLE);
             vh.status.setText("GEO");
             vh.status.setBackgroundResource(R.drawable.bg_chip);
@@ -113,8 +114,8 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
 
     static String meta(Channel c) {
         String cat = Labels.category(c.primaryGroup());
-        String v = c.variantLabel();
-        if (v != null) cat = cat + "  ·  " + v;
+        int n = c.sourceCount();
+        if (n > 1) cat = cat + "  ·  " + n + " izvora";
         if (c.country != null) return Labels.flag(c.country) + "  " + cat;
         return cat;
     }
