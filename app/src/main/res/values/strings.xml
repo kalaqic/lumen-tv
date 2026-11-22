@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Lumen TV</string>
+    <string name="search_hint">Pretraži kanale…</string>
+    <string name="refresh">Osvježi</string>
+    <string name="playlists">Plejliste</string>
+    <string name="loading">Učitavam plejlistu…</string>
+    <string name="retry">Pokušaj ponovo</string>
+    <string name="empty">Nema kanala za prikaz</string>
+    <string name="add_playlist">Dodaj plejlistu</string>
+    <string name="playlist_name_hint">Naziv (npr. Moja lista)</string>
+    <string name="playlist_url_hint">Link do .m3u / .m3u8 plejliste</string>
+    <string name="save">Sačuvaj</string>
+    <string name="back">Nazad</string>
+</resources>
