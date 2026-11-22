@@ -19,17 +19,24 @@
         android:theme="@style/Theme.Lumen"
         android:usesCleartextTraffic="true">
 
+        <!-- Pocetni ekran: ako je izvor (besplatno/prijava) vec izabran, odmah otvara kanale -->
         <activity
-            android:name=".MainActivity"
+            android:name=".WelcomeActivity"
             android:exported="true"
             android:screenOrientation="landscape"
-            android:windowSoftInputMode="adjustNothing|stateHidden">
+            android:theme="@style/Theme.Lumen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustNothing|stateHidden" />
 
         <activity
             android:name=".PlayerActivity"
@@ -39,22 +46,10 @@
             android:theme="@style/Theme.Lumen.Player" />
 
         <activity
-            android:name=".WelcomeActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Lumen" />
-
-        <activity
             android:name=".XtreamActivity"
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.Lumen"
-            android:windowSoftInputMode="adjustPan|stateHidden" />
-
-        <activity
-            android:name=".PlaylistsActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustPan|stateHidden" />
 
         <!-- Za instalaciju skinutih ažuriranja -->

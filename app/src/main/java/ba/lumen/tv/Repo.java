@@ -28,12 +28,11 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Centralno mjesto za plejliste, kes, favorite i nedavno gledane kanale. */
+/** Centralno mjesto za izvor kanala (besplatno / Xtream prijava), kes, favorite i historiju. */
 public final class Repo {
 
-    public static final String DEFAULT_URL = "https://iptv-org.github.io/iptv/index.m3u";
-
-    /** Lumen TV liste po drzavama (folder playlists/ u GitHub repozitoriju aplikacije). */
+    /** Besplatne Lumen TV liste po drzavama (folder playlists/ u GitHub repozitoriju aplikacije).
+     *  Redoslijed je i redoslijed u aplikaciji: BiH, Srbija, Hrvatska, pa ostale. */
     public static final String[][] COUNTRY_LISTS = {
             {"ba", "\uD83C\uDDE7\uD83C\uDDE6", "Bosna i Hercegovina"},
             {"rs", "\uD83C\uDDF7\uD83C\uDDF8", "Srbija"},
@@ -44,30 +43,14 @@ public final class Repo {
             {"xk", "\uD83C\uDDFD\uD83C\uDDF0", "Kosovo"},
     };
 
-    /** Stara spojena "Balkan" lista iz ranije verzije – zamijenjena listama po drzavama. */
-    private static final String OLD_MERGED_PREFIX = "https://iptv-org.github.io/iptv/countries/ba.m3u\n";
+    public static final String MODE_FREE = "free";
+    public static final String MODE_XTREAM = "xtream";
 
-    public String countryListUrl(String code) {
-        return "https://raw.githubusercontent.com/" + app.getString(R.string.update_repo)
-                + "/main/playlists/" + code + ".m3u";
-    }
-
-    public String balkanId() { return "c_balkan"; }
-
-    /** Spojena Balkan lista: sve drzave u jednom, redom BiH, Srbija, Hrvatska… */
-    public String balkanUrl() {
-        StringBuilder sb = new StringBuilder();
-        for (String[] c : COUNTRY_LISTS) {
-            if (sb.length() > 0) sb.append('\n');
-            sb.append(countryListUrl(c[0]));
-        }
-        return sb.toString();
-    }
     static final String UA = "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
     private static final long STALE_MS = 12L * 60 * 60 * 1000; // 12h
 
     public static final class Playlist {
-        public String id, name, url;
+        public final String id, name, url;
         Playlist(String id, String name, String url) { this.id = id; this.name = name; this.url = url; }
     }
 
@@ -89,7 +72,7 @@ public final class Repo {
     private final Handler main = new Handler(Looper.getMainLooper());
     private int generation = 0;
 
-    /** Svi kanali aktivne plejliste. */
+    /** Svi kanali aktivnog izvora. */
     public List<Channel> all = new ArrayList<>();
     /** Lista koja je trenutno prikazana (koristi je plejer za ▲▼). */
     public List<Channel> current = new ArrayList<>();
@@ -102,123 +85,128 @@ public final class Repo {
     private Repo(Context app) {
         this.app = app;
         this.prefs = app.getSharedPreferences("lumen", Context.MODE_PRIVATE);
+        migrateOldSettings();
         readList("favorites", favorites);
         List<String> r = new ArrayList<>();
         readList("recents", r);
         recents.addAll(r);
     }
 
-    // ------------------------------------------------------------------ plejliste
+    // ------------------------------------------------------------------ izvor: besplatno ili prijava
 
-    public List<Playlist> playlists() {
-        List<Playlist> out = new ArrayList<>();
+    public String countryListUrl(String code) {
+        return "https://raw.githubusercontent.com/" + app.getString(R.string.update_repo)
+                + "/main/playlists/" + code + ".m3u";
+    }
+
+    /** Sve besplatne liste spojene u jednu, redom BiH, Srbija, Hrvatska, pa ostale. */
+    public String freeUrl() {
+        StringBuilder sb = new StringBuilder();
+        for (String[] c : COUNTRY_LISTS) {
+            if (sb.length() > 0) sb.append('\n');
+            sb.append(countryListUrl(c[0]));
+        }
+        return sb.toString();
+    }
+
+    /** MODE_FREE, MODE_XTREAM, ili null ako korisnik jos nije izabrao. */
+    public String mode() {
+        String m = prefs.getString("mode", null);
+        if (MODE_XTREAM.equals(m) && !hasXtream()) return MODE_FREE;
+        if (MODE_XTREAM.equals(m) || MODE_FREE.equals(m)) return m;
+        return null;
+    }
+
+    public boolean isXtream() { return MODE_XTREAM.equals(mode()); }
+
+    public boolean hasXtream() {
+        String u = prefs.getString("xtream_url", null);
+        return u != null && !u.isEmpty();
+    }
+
+    public String xtreamName() {
+        String n = prefs.getString("xtream_name", null);
+        return n == null || n.isEmpty() ? "Moja prijava" : n;
+    }
+
+    public void setFreeMode() {
+        prefs.edit().putString("mode", MODE_FREE).apply();
+        cleanOldCache();
+    }
+
+    /** Sacuva Xtream prijavu (samo na ovom uredaju) i prebaci na nju. */
+    public void setXtream(String name, String url) {
+        prefs.edit().putString("xtream_name", name).putString("xtream_url", url)
+                .putString("mode", MODE_XTREAM).apply();
+        cleanOldCache();
+    }
+
+    /** Prebaci na vec sacuvanu Xtream prijavu. */
+    public void useSavedXtream() {
+        if (hasXtream()) prefs.edit().putString("mode", MODE_XTREAM).apply();
+    }
+
+    public Playlist active() {
+        if (isXtream()) {
+            String url = prefs.getString("xtream_url", "");
+            return new Playlist("xtream_" + Integer.toHexString(url.hashCode()), xtreamName(), url);
+        }
+        String url = freeUrl();
+        return new Playlist("free_" + Integer.toHexString(url.hashCode()), "Besplatni kanali", url);
+    }
+
+    public String activeId() { return active().id; }
+
+    private File cacheFile(Playlist p) {
+        return new File(app.getFilesDir(), "pl_" + Integer.toHexString(p.url.hashCode()) + ".m3u");
+    }
+
+    /** Obrisi kes starih plejlisti koje se vise ne koriste. */
+    private void cleanOldCache() {
+        try {
+            Set<String> keep = new HashSet<>();
+            keep.add(cacheFile(new Playlist("", "", freeUrl())).getName());
+            String x = prefs.getString("xtream_url", null);
+            if (x != null) keep.add(cacheFile(new Playlist("", "", x)).getName());
+            File[] files = app.getFilesDir().listFiles();
+            if (files == null) return;
+            for (File f : files) {
+                String n = f.getName();
+                // samo zavrseni kes fajlovi (.m3u), nikad .part/.combined koji se upravo skidaju
+                if (n.startsWith("pl_") && n.endsWith(".m3u") && !keep.contains(n)) {
+                    //noinspection ResultOfMethodCallIgnored
+                    f.delete();
+                }
+            }
+        } catch (Exception ignored) { }
+    }
+
+    /** Prebacivanje sa starog sistema (lista plejlisti) na novi (besplatno / prijava). */
+    private void migrateOldSettings() {
+        if (prefs.contains("mode") || !prefs.contains("playlists")) return;
+        String activeId = prefs.getString("active", null);
+        String xUrl = null, xName = null;
+        boolean activeIsXtream = false;
         try {
             JSONArray arr = new JSONArray(prefs.getString("playlists", "[]"));
             for (int i = 0; i < arr.length(); i++) {
                 JSONObject o = arr.getJSONObject(i);
-                out.add(new Playlist(o.getString("id"), o.getString("name"), o.getString("url")));
-            }
-        } catch (Exception ignored) { }
-        boolean fresh = out.isEmpty();
-        if (!prefs.getBoolean("seeded_v2", false)) {
-            String activeBefore = prefs.getString("active", null);
-            boolean removedActive = false;
-            // ukloni staru spojenu Balkan listu (iptv-org countries)
-            for (int i = out.size() - 1; i >= 0; i--) {
-                if (out.get(i).url.startsWith(OLD_MERGED_PREFIX)) {
-                    if (out.get(i).id.equals(activeBefore)) removedActive = true;
-                    out.remove(i);
+                String url = o.getString("url");
+                if (!url.contains("get.php")) continue;
+                boolean isActive = o.getString("id").equals(activeId);
+                if (xUrl == null || isActive) {
+                    xUrl = url;
+                    xName = o.getString("name");
                 }
-            }
-            // razdvoji standardne (Lumen) i korisnicke (npr. Xtream) plejliste
-            List<Playlist> user = new ArrayList<>();
-            for (Playlist p : out) {
-                if (!p.id.equals("default") && !p.id.startsWith("c_")) user.add(p);
-            }
-            // sastavi standardne plejliste u zeljenom redoslijedu
-            List<Playlist> std = new ArrayList<>();
-            std.add(new Playlist(balkanId(), "🌍  Balkan — sve zemlje", balkanUrl()));
-            for (String[] c : COUNTRY_LISTS) {
-                std.add(new Playlist("c_" + c[0], c[1] + "  " + c[2], countryListUrl(c[0])));
-            }
-            std.add(new Playlist("default", "IPTV-org · Svi kanali", DEFAULT_URL));
-
-            out = new ArrayList<>();
-            out.addAll(std);
-            out.addAll(user);
-
-            SharedPreferences.Editor ed = prefs.edit().putBoolean("seeded_v2", true);
-            boolean activeValid = false;
-            for (Playlist p : out) if (p.id.equals(activeBefore)) { activeValid = true; break; }
-            if (fresh || removedActive || !activeValid) ed.putString("active", balkanId());
-            ed.apply();
-            savePlaylists(out);
-        }
-        if (out.isEmpty()) {
-            out.add(new Playlist("default", "IPTV-org · Svi kanali", DEFAULT_URL));
-            savePlaylists(out);
-        }
-        return out;
-    }
-
-    public void savePlaylists(List<Playlist> list) {
-        JSONArray arr = new JSONArray();
-        try {
-            for (Playlist p : list) {
-                JSONObject o = new JSONObject();
-                o.put("id", p.id);
-                o.put("name", p.name);
-                o.put("url", p.url);
-                arr.put(o);
+                if (isActive) activeIsXtream = true;
             }
         } catch (Exception ignored) { }
-        prefs.edit().putString("playlists", arr.toString()).apply();
-    }
-
-    public Playlist addPlaylist(String name, String url) {
-        List<Playlist> list = playlists();
-        for (Playlist p : list) if (p.url.equals(url)) return p;
-        Playlist p = new Playlist("p" + System.currentTimeMillis(), name, url);
-        list.add(p);
-        savePlaylists(list);
-        return p;
-    }
-
-    public void removePlaylist(String id) {
-        List<Playlist> list = playlists();
-        for (int i = 0; i < list.size(); i++) {
-            if (list.get(i).id.equals(id)) {
-                File f = cacheFile(list.get(i));
-                //noinspection ResultOfMethodCallIgnored
-                f.delete();
-                list.remove(i);
-                break;
-            }
-        }
-        if (list.isEmpty()) list.add(new Playlist("default", "IPTV-org · Svi kanali", DEFAULT_URL));
-        savePlaylists(list);
-        if (id.equals(activeId())) setActive(list.get(0).id);
-    }
-
-    public String activeId() {
-        List<Playlist> list = playlists();
-        String id = prefs.getString("active", null);
-        for (Playlist p : list) if (p.id.equals(id)) return id;
-        return list.get(0).id;
-    }
-
-    public void setActive(String id) {
-        prefs.edit().putString("active", id).apply();
-    }
-
-    public Playlist active() {
-        String id = activeId();
-        for (Playlist p : playlists()) if (p.id.equals(id)) return p;
-        return playlists().get(0);
-    }
-
-    private File cacheFile(Playlist p) {
-        return new File(app.getFilesDir(), "pl_" + Integer.toHexString(p.url.hashCode()) + ".m3u");
+        SharedPreferences.Editor ed = prefs.edit();
+        if (xUrl != null) ed.putString("xtream_url", xUrl).putString("xtream_name", xName);
+        if (activeIsXtream) ed.putString("mode", MODE_XTREAM);
+        // inace "mode" ostaje prazan pa ce aplikacija jednom ponuditi izbor
+        ed.remove("playlists").remove("active").remove("seeded_countries_v1").remove("seeded_v2");
+        ed.apply();
     }
 
     // ------------------------------------------------------------------ ucitavanje
@@ -416,11 +404,6 @@ public final class Repo {
     }
 
     public int favoriteCount() { return favorites.size(); }
-
-    public boolean hasPlaylistUrl(String url) {
-        for (Playlist p : playlists()) if (p.url.equals(url)) return true;
-        return false;
-    }
 
     public void addRecent(Channel c) {
         recents.remove(c.url);

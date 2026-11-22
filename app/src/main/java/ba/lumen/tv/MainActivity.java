@@ -3,7 +3,6 @@ package ba.lumen.tv;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -29,16 +28,20 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 public class MainActivity extends Activity implements SidebarAdapter.Listener, ChannelAdapter.Listener {
 
-    /** Drzave koje se prikazuju na vrhu liste drzava. */
-    private static final List<String> PINNED = Arrays.asList("BA", "HR", "RS", "ME", "SI", "MK", "XK");
+    /** Redoslijed drzava: BiH, Srbija, Hrvatska, pa ostale. */
+    static final List<String> PINNED = Arrays.asList("BA", "RS", "HR", "ME", "SI", "MK", "XK");
 
     private Repo repo;
+    private Health health;
+    private Updater updater;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
     private RecyclerView side, grid;
@@ -49,17 +52,21 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     private View stateView, progress;
     private EditText search;
 
+    /** Trenutno odabrana stavka menija (filter: svi, drzava, kategorija...). */
     private SideItem selected;
     private String query = "";
     private String shownPlaylistId;
     private boolean firstFocusDone = false;
-    private boolean focusGridAfterLoad = false;
+    private int shownCount = 0;
+    private String healthText = "";
+    private int healthCheckId = -1;
     private final NumberFormat nf = NumberFormat.getIntegerInstance(new Locale("bs"));
 
+    /** Odabir stavke menija kad se korisnik zaustavi na njoj (kao ranije). */
     private Runnable pendingSelect;
-    private Updater updater;
-    private Health health;
-    private String healthText = "";
+    /** true dok aplikacija sama pomjera fokus (da se to ne shvati kao korisnikov odabir). */
+    private boolean programmaticFocus = false;
+
     private final Runnable searchRunnable = new Runnable() {
         @Override public void run() { applyFilter(true); }
     };
@@ -67,11 +74,22 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        repo = Repo.get(this);
+
+        // izvor jos nije izabran (npr. pokrenuto preko stare precice) -> prvo izbor
+        if (repo.mode() == null) {
+            Intent i = new Intent(this, WelcomeActivity.class);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            startActivity(i);
+            finish();
+            return;
+        }
+
         Ui.init(this);
         setContentView(R.layout.activity_main);
         Ui.applyFonts(findViewById(R.id.root));
-        repo = Repo.get(this);
         health = Health.get(this);
+        updater = new Updater(this);
 
         side = findViewById(R.id.side_list);
         grid = findViewById(R.id.grid);
@@ -84,13 +102,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         stateText = findViewById(R.id.state_text);
         retryBtn = findViewById(R.id.btn_retry);
         search = findViewById(R.id.search);
+
         TextView version = findViewById(R.id.app_version);
         try {
             version.setText("Lumen TV · verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
         } catch (Exception e) {
             version.setText("Lumen TV");
         }
-        updater = new Updater(this);
 
         sideAdapter = new SidebarAdapter(this);
         side.setLayoutManager(new LinearLayoutManager(this));
@@ -105,6 +123,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         grid.setHasFixedSize(true);
         grid.setItemViewCacheSize(30);
 
+        findViewById(R.id.source_row).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                Intent i = new Intent(MainActivity.this, WelcomeActivity.class);
+                i.putExtra(WelcomeActivity.EXTRA_SWITCH, true);
+                startActivity(i);
+            }
+        });
         findViewById(R.id.btn_refresh).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { load(true); }
         });
@@ -119,7 +144,9 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) { }
             @Override public void afterTextChanged(Editable s) {
-                query = s.toString().trim();
+                String q = s.toString().trim();
+                if (q.equals(query)) return;
+                query = q;
                 handler.removeCallbacks(searchRunnable);
                 handler.postDelayed(searchRunnable, 280);
             }
@@ -138,19 +165,12 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             }
         });
 
-        // Kada fokus udje u bocni meni izvana, vrati ga na trenutno odabranu stavku.
         getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(
                 new ViewTreeObserver.OnGlobalFocusChangeListener() {
                     @Override public void onGlobalFocusChanged(View oldFocus, View newFocus) {
                         onFocusMoved(oldFocus, newFocus);
                     }
                 });
-
-        SharedPreferences sp = getSharedPreferences("lumen", MODE_PRIVATE);
-        if (!sp.getBoolean("welcome_done", false)) {
-            sp.edit().putBoolean("welcome_done", true).apply();
-            startActivity(new Intent(this, WelcomeActivity.class));
-        }
 
         load(false);
         updater.checkOnStart();
@@ -159,20 +179,26 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     @Override
     protected void onResume() {
         super.onResume();
+        if (updater == null) return; // activity se zatvara (preusmjereno na izbor izvora)
         updater.onResume();
-        if (shownPlaylistId != null && !shownPlaylistId.equals(repo.activeId())) {
-            load(false);
-            return;
+        boolean loaded = shownPlaylistId != null && shownPlaylistId.equals(repo.loadedPlaylistId)
+                && !repo.all.isEmpty();
+        if (!loaded) return;
+        // vracanje iz plejera: favoriti, historija i status kanala su se mozda promijenili
+        updateLibraryCounts();
+        if (selected != null && (selected.type == SideItem.FAVORITES || selected.type == SideItem.RECENT)
+                && query.isEmpty()) {
+            applyFilter(false);
+        } else {
+            gridAdapter.notifyItemRangeChanged(0, gridAdapter.getItemCount());
         }
-        if (!repo.all.isEmpty()) {
-            // favoriti/nedavno su se mozda promijenili u plejeru
-            updateLibraryCounts();
-            if (selected != null && (selected.type == SideItem.FAVORITES || selected.type == SideItem.RECENT) && query.isEmpty()) {
-                applyFilter(false);
-            } else {
-                gridAdapter.notifyItemRangeChanged(0, gridAdapter.getItemCount());
-            }
-        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        handler.removeCallbacksAndMessages(null);
+        if (health != null) health.cancel(healthCheckId);
     }
 
     private int spanCount() {
@@ -186,17 +212,20 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
 
     private void load(boolean force) {
         final Repo.Playlist p = repo.active();
+        boolean otherSource = !p.id.equals(repo.loadedPlaylistId);
         shownPlaylistId = p.id;
-        playlistName.setText(p.name);
-        if (force || repo.all.isEmpty() || !p.id.equals(repo.loadedPlaylistId)) {
-            showLoading();
+        playlistName.setText(repo.isXtream() ? p.name : "Besplatni kanali");
+        if (otherSource) {
+            // meni od prethodnog izvora vise ne vazi
+            selected = null;
+            sideAdapter.setItems(Collections.<SideItem>emptyList());
         }
+        if (force || otherSource || repo.all.isEmpty()) showLoading();
         if (force) health.clear();
         repo.load(force, new Repo.LoadCallback() {
             @Override public void onLoaded(List<Channel> channels, boolean fromCache) {
                 buildSidebar();
                 applyFilter(false);
-                if (focusGridAfterLoad) { focusGridAfterLoad = false; focusGrid(); }
                 if (!fromCache) toast("Učitano " + nf.format(channels.size()) + " kanala");
                 startHealthCheck();
             }
@@ -213,7 +242,8 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         progress.setVisibility(View.VISIBLE);
         retryBtn.setVisibility(View.GONE);
         stateTitle.setText(R.string.loading);
-        stateText.setText("Prvo učitavanje velike liste može potrajati nekoliko sekundi.");
+        stateText.setText("Prvo učitavanje može potrajati nekoliko sekundi.");
+        healthText = "";
         subtitle.setText("");
     }
 
@@ -241,7 +271,10 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     // ------------------------------------------------------------------ bocni meni
 
     private void buildSidebar() {
+        cancelPendingSelect();
         List<Channel> all = repo.all;
+        boolean xtream = repo.isXtream();
+
         Map<String, Integer> cats = new HashMap<>();
         Map<String, Integer> countries = new HashMap<>();
         for (Channel c : all) {
@@ -256,95 +289,123 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         }
 
         List<SideItem> items = new ArrayList<>();
-
-        // ----- Plejliste (izvori) -----
-        items.add(new SideItem(SideItem.HEADER, null, "Plejliste", 0));
-        String activeId = repo.activeId();
-        for (Repo.Playlist pl : repo.playlists()) {
-            String emoji = null, label = pl.name;
-            int sp = pl.name.indexOf("  ");
-            if (sp > 0 && sp <= 6) {       // vodeci emoji (zastava) odvojen od naziva
-                emoji = pl.name.substring(0, sp).trim();
-                label = pl.name.substring(sp).trim();
+        if (!xtream) {
+            // Besplatno: Balkan (svi), pa BiH, Srbija, Hrvatska, ostale; pa moje; pa kategorije
+            items.add(new SideItem(SideItem.HEADER, null, "Balkan", 0));
+            SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
+            allItem.icon = R.drawable.ic_globe;
+            items.add(allItem);
+            for (String code : sortedCountries(countries.keySet())) {
+                SideItem it = new SideItem(SideItem.COUNTRY, code, Labels.countryName(code), countries.get(code));
+                it.emoji = Labels.flag(code);
+                items.add(it);
             }
-            SideItem pi = new SideItem(SideItem.PLAYLIST, pl.id, label, 0);
-            pi.activeFlag = pl.id.equals(activeId);
-            if (emoji != null) pi.emoji = emoji;
-            else pi.icon = R.drawable.ic_list;
-            items.add(pi);
+            items.add(new SideItem(SideItem.HEADER, null, "Moje", 0));
+            addLibrary(items);
+            if (cats.size() > 1) {
+                items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
+                for (String k : sortedCategories(cats.keySet(), false)) {
+                    SideItem it = new SideItem(SideItem.CATEGORY, k, Labels.category(k), cats.get(k));
+                    it.icon = R.drawable.ic_tag;
+                    items.add(it);
+                }
+            }
+        } else {
+            // Prijava: svi, moje, kategorije servera (balkanske prve), drzave ako ih ima
+            items.add(new SideItem(SideItem.HEADER, null, "Biblioteka", 0));
+            SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
+            allItem.icon = R.drawable.ic_grid;
+            items.add(allItem);
+            addLibrary(items);
+            if (cats.size() > 1) {
+                items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
+                for (String k : sortedCategories(cats.keySet(), true)) {
+                    SideItem it = new SideItem(SideItem.CATEGORY, k, Labels.category(k), cats.get(k));
+                    it.icon = R.drawable.ic_tag;
+                    items.add(it);
+                }
+            }
+            if (countries.size() > 1) {
+                items.add(new SideItem(SideItem.HEADER, null, "Države", 0));
+                for (String code : sortedCountries(countries.keySet())) {
+                    SideItem it = new SideItem(SideItem.COUNTRY, code, Labels.countryName(code), countries.get(code));
+                    it.emoji = Labels.flag(code);
+                    items.add(it);
+                }
+            }
         }
-        SideItem add = new SideItem(SideItem.ADD, null, "Dodaj / Xtream prijava", 0);
-        add.icon = R.drawable.ic_add;
-        items.add(add);
 
-        items.add(new SideItem(SideItem.HEADER, null, "Biblioteka", 0));
-        int balkanCount = 0;
-        for (Channel c : all) if (c.balkan) balkanCount++;
-        if (balkanCount > 0 && balkanCount < all.size()) {
-            SideItem balkan = new SideItem(SideItem.BALKAN, null, "Balkan", balkanCount);
-            balkan.icon = R.drawable.ic_globe;
-            items.add(balkan);
+        // zadrzi prethodni odabir ako jos postoji, inace "Svi kanali"
+        int sel = -1;
+        if (selected != null) {
+            for (int i = 0; i < items.size(); i++) if (items.get(i).sameAs(selected)) { sel = i; break; }
         }
-        SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
-        allItem.icon = R.drawable.ic_grid;
-        items.add(allItem);
+        if (sel < 0) {
+            for (int i = 0; i < items.size(); i++) if (items.get(i).type == SideItem.ALL) { sel = i; break; }
+        }
+        sideAdapter.selected = sel;
+        sideAdapter.setItems(items);
+        selected = items.get(sel);
+    }
+
+    private void addLibrary(List<SideItem> items) {
         SideItem fav = new SideItem(SideItem.FAVORITES, null, "Favoriti", repo.favoriteChannels().size());
         fav.icon = R.drawable.ic_star;
         items.add(fav);
         SideItem rec = new SideItem(SideItem.RECENT, null, "Nedavno gledano", repo.recentCount());
         rec.icon = R.drawable.ic_history;
         items.add(rec);
+    }
 
+    /** BiH, Srbija, Hrvatska, Crna Gora, Slovenija, Makedonija, Kosovo, pa ostale abecedno. */
+    private static List<String> sortedCountries(Set<String> codes) {
         final Collator collator = Collator.getInstance(new Locale("bs"));
-
-        if (cats.size() > 1) {
-            items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
-            List<String> keys = new ArrayList<>(cats.keySet());
-            Collections.sort(keys, new Comparator<String>() {
-                @Override public int compare(String a, String b) {
-                    boolean ua = a.equalsIgnoreCase("undefined"), ub = b.equalsIgnoreCase("undefined");
-                    if (ua != ub) return ua ? 1 : -1;
-                    return collator.compare(Labels.category(a), Labels.category(b));
-                }
-            });
-            for (String k : keys) {
-                SideItem it = new SideItem(SideItem.CATEGORY, k, Labels.category(k), cats.get(k));
-                it.icon = R.drawable.ic_tag;
-                items.add(it);
+        List<String> list = new ArrayList<>(codes);
+        Collections.sort(list, new Comparator<String>() {
+            @Override public int compare(String a, String b) {
+                int pa = PINNED.indexOf(a), pb = PINNED.indexOf(b);
+                if (pa < 0) pa = PINNED.size();
+                if (pb < 0) pb = PINNED.size();
+                if (pa != pb) return pa - pb;
+                return collator.compare(Labels.countryName(a), Labels.countryName(b));
             }
-        }
+        });
+        return list;
+    }
 
-        if (countries.size() > 1) {
-            items.add(new SideItem(SideItem.HEADER, null, "Države", 0));
-            List<String> codes = new ArrayList<>(countries.keySet());
-            Collections.sort(codes, new Comparator<String>() {
-                @Override public int compare(String a, String b) {
-                    int pa = PINNED.indexOf(a), pb = PINNED.indexOf(b);
-                    if (pa >= 0 || pb >= 0) {
-                        if (pa < 0) return 1;
-                        if (pb < 0) return -1;
-                        return pa - pb;
-                    }
-                    return collator.compare(Labels.countryName(a), Labels.countryName(b));
+    /** Kategorije abecedno ("Ostalo" na kraju); za prijavu balkanske kategorije idu prve. */
+    private static List<String> sortedCategories(Set<String> keys, final boolean balkanFirst) {
+        final Collator collator = Collator.getInstance(new Locale("bs"));
+        List<String> list = new ArrayList<>(keys);
+        Collections.sort(list, new Comparator<String>() {
+            @Override public int compare(String a, String b) {
+                boolean ua = a.equalsIgnoreCase("undefined"), ub = b.equalsIgnoreCase("undefined");
+                if (ua != ub) return ua ? 1 : -1;
+                if (balkanFirst) {
+                    int ra = categoryRank(a), rb = categoryRank(b);
+                    if (ra != rb) return ra - rb;
                 }
-            });
-            for (String code : codes) {
-                SideItem it = new SideItem(SideItem.COUNTRY, code, Labels.countryName(code), countries.get(code));
-                it.emoji = Labels.flag(code);
-                items.add(it);
+                return collator.compare(Labels.category(a), Labels.category(b));
             }
-        }
+        });
+        return list;
+    }
 
-        // podrazumijevani odabir: "Svi kanali"; inace zadrzi prethodni filter
-        int sel = -1;
-        for (int i = 0; i < items.size(); i++) if (items.get(i).type == SideItem.ALL) { sel = i; break; }
-        if (sel < 0) sel = 1;
-        if (selected != null && selected.type != SideItem.PLAYLIST && selected.type != SideItem.ADD) {
-            for (int i = 0; i < items.size(); i++) if (items.get(i).sameAs(selected)) { sel = i; break; }
-        }
-        sideAdapter.selected = sel;
-        sideAdapter.setItems(items);
-        selected = items.get(sel);
+    /** 0 = BiH, 1 = Srbija, 2 = Hrvatska, 3 = ostali Balkan / Ex-YU, 9 = ostalo. */
+    static int categoryRank(String group) {
+        String n = M3uParser.normalize(group).toUpperCase(Locale.ROOT);
+        Set<String> t = new HashSet<>(Arrays.asList(n.split("[^A-Z0-9]+")));
+        if (anyOf(t, "BIH", "BA", "BOSNA", "BOSNIA", "BOSANSKI")) return 0;
+        if (anyOf(t, "SRB", "RS", "SRBIJA", "SERBIA", "SRPSKI")) return 1;
+        if (anyOf(t, "HR", "HRV", "CRO", "HRVATSKA", "CROATIA", "HRVATSKI")) return 2;
+        if (anyOf(t, "EXYU", "EX", "YU", "YUGO", "BALKAN", "BALKANS", "CG", "MNE", "MONTENEGRO",
+                "SLO", "SLOVENIJA", "SLOVENIA", "MK", "MKD", "MAKEDONIJA", "MACEDONIA", "KOSOVO")) return 3;
+        return 9;
+    }
+
+    private static boolean anyOf(Set<String> tokens, String... words) {
+        for (String w : words) if (tokens.contains(w)) return true;
+        return false;
     }
 
     private void updateLibraryCounts() {
@@ -361,60 +422,38 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         }
     }
 
+    /** OK na stavci menija: odaberi je odmah i predji na kanale. */
     @Override
     public void onSideClick(int position) {
-        if (pendingSelect != null) handler.removeCallbacks(pendingSelect);
-        SideItem it = sideAdapter.get(position);
-        if (it != null && it.type == SideItem.ADD) {
-            startActivity(new Intent(this, PlaylistsActivity.class));
-            return;
-        }
-        if (it != null && it.type == SideItem.PLAYLIST) {
-            switchPlaylist(it.key);
-            return;
-        }
+        cancelPendingSelect();
         select(position);
         focusGrid();
     }
 
-    private void switchPlaylist(String id) {
-        if (id == null || id.equals(repo.activeId())) { focusGrid(); return; }
-        repo.setActive(id);
-        selected = null;
-        query = "";
-        search.setText("");
-        handler.removeCallbacks(searchRunnable);
-        focusGridAfterLoad = true;
-        load(false);
-    }
-
     private void select(int position) {
         SideItem it = sideAdapter.get(position);
-        if (it == null || it.type == SideItem.HEADER
-                || it.type == SideItem.PLAYLIST || it.type == SideItem.ADD) return;
-        boolean changed = !it.sameAs(selected);
+        if (it == null || it.type == SideItem.HEADER) return;
+        boolean changed = !it.sameAs(selected) || !query.isEmpty();
         selected = it;
         sideAdapter.setSelected(position);
-        if (!query.isEmpty()) {
-            // odabir kategorije brise pretragu
-            query = "";
-            search.setText("");
-            handler.removeCallbacks(searchRunnable);
-            changed = true;
-        }
+        if (!query.isEmpty()) clearSearch();
         if (changed) applyFilter(true);
     }
 
     private void onFocusMoved(View oldFocus, View newFocus) {
         if (newFocus == null) return;
-        boolean newInSide = isInside(side, newFocus);
-        boolean oldInSide = oldFocus != null && isInside(side, oldFocus);
-        if (!newInSide) return;
+        if (!isInside(side, newFocus)) {
+            cancelPendingSelect();   // fokus je napustio meni -> nista se ne bira
+            return;
+        }
+        if (programmaticFocus) return;  // aplikacija je pomjerila fokus, ne korisnik
 
         View item = side.findContainingItemView(newFocus);
         final int pos = item != null ? side.getChildAdapterPosition(item) : RecyclerView.NO_POSITION;
+        boolean oldInSide = oldFocus != null && isInside(side, oldFocus);
 
         if (!oldInSide) {
+            // ulazak u meni: samo vrati fokus na odabranu stavku, NE mijenjaj prikaz ni pretragu
             final int sel = sideAdapter.selected;
             if (pos != sel) {
                 side.post(new Runnable() {
@@ -423,26 +462,58 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             }
             return;
         }
-        // navigacija unutar menija: odaberi nakon kratke pauze
-        if (pendingSelect != null) handler.removeCallbacks(pendingSelect);
+        // korisnik se krece gore/dole kroz meni: odaberi stavku kad se zaustavi na njoj
+        scheduleSelect(pos);
+    }
+
+    private void scheduleSelect(final int pos) {
+        cancelPendingSelect();
+        final SideItem target = sideAdapter.get(pos);
+        if (target == null || target.type == SideItem.HEADER) return;
         pendingSelect = new Runnable() {
-            @Override public void run() { if (pos != RecyclerView.NO_POSITION) select(pos); }
+            @Override public void run() {
+                pendingSelect = null;
+                // provjeri da je fokus i dalje na toj istoj stavci i da se meni nije promijenio
+                View f = getCurrentFocus();
+                if (f == null || !isInside(side, f)) return;
+                View it = side.findContainingItemView(f);
+                if (it == null || side.getChildAdapterPosition(it) != pos) return;
+                if (sideAdapter.get(pos) != target) return;
+                select(pos);
+            }
         };
-        handler.postDelayed(pendingSelect, 320);
+        handler.postDelayed(pendingSelect, 350);
+    }
+
+    private void cancelPendingSelect() {
+        if (pendingSelect != null) {
+            handler.removeCallbacks(pendingSelect);
+            pendingSelect = null;
+        }
     }
 
     private void focusSideItem(final int pos) {
+        if (pos < 0 || pos >= sideAdapter.getItemCount()) return;
         RecyclerView.ViewHolder vh = side.findViewHolderForAdapterPosition(pos);
         if (vh != null) {
-            vh.itemView.requestFocus();
+            requestFocusQuietly(vh.itemView);
         } else {
             side.scrollToPosition(pos);
             side.post(new Runnable() {
                 @Override public void run() {
                     RecyclerView.ViewHolder v2 = side.findViewHolderForAdapterPosition(pos);
-                    if (v2 != null) v2.itemView.requestFocus();
+                    if (v2 != null) requestFocusQuietly(v2.itemView);
                 }
             });
+        }
+    }
+
+    private void requestFocusQuietly(View v) {
+        programmaticFocus = true;
+        try {
+            v.requestFocus();
+        } finally {
+            programmaticFocus = false;
         }
     }
 
@@ -456,16 +527,17 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         return false;
     }
 
-    // ------------------------------------------------------------------ filtriranje
+    // ------------------------------------------------------------------ filtriranje i sortiranje
 
     private void applyFilter(boolean scrollTop) {
+        boolean xtream = repo.isXtream();
         List<Channel> out;
         String sectionTitle;
         if (!query.isEmpty()) {
             String q = M3uParser.normalize(query);
             out = new ArrayList<>();
             for (Channel c : repo.all) if (c.searchKey.contains(q)) out.add(c);
-            out = prioritize(out, true);
+            if (!xtream) out = prioritize(out, true);
             sectionTitle = "Rezultati za „" + query + "“";
         } else {
             SideItem s = selected;
@@ -479,29 +551,23 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                     out = repo.recentChannels();
                     sectionTitle = "Nedavno gledano";
                     break;
-                case SideItem.BALKAN:
-                    out = new ArrayList<>();
-                    for (Channel c : repo.all) if (c.balkan) out.add(c);
-                    out = prioritize(out, false);
-                    sectionTitle = "Balkan";
-                    break;
                 case SideItem.CATEGORY:
                     out = new ArrayList<>();
                     for (Channel c : repo.all) {
                         for (String g : c.groups) if (g.equals(s.key)) { out.add(c); break; }
                     }
-                    out = prioritize(out, true);
+                    if (!xtream) out = prioritize(out, true);
                     sectionTitle = s.label;
                     break;
                 case SideItem.COUNTRY:
                     out = new ArrayList<>();
                     for (Channel c : repo.all) if (s.key.equals(c.country)) out.add(c);
-                    out = prioritize(out, false);
+                    if (!xtream) out = prioritize(out, false);
                     sectionTitle = s.emoji + "  " + s.label;
                     break;
                 default:
-                    out = prioritize(repo.all, true);
-                    sectionTitle = "Svi kanali";
+                    out = xtream ? new ArrayList<>(repo.all) : prioritize(repo.all, true);
+                    sectionTitle = xtream ? "Svi kanali" : "Svi balkanski kanali";
             }
         }
         title.setText(sectionTitle);
@@ -521,41 +587,47 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         }
     }
 
-    private int shownCount = 0;
-
     private void updateSubtitle() {
         int n = shownCount;
         String base = nf.format(n) + (n % 10 == 1 && n % 100 != 11 ? " kanal" : " kanala");
         subtitle.setText(healthText.isEmpty() ? base : base + "   ·   " + healthText);
     }
 
-    /** Balkan prvo (ako je trazeno), zatim kanali koji rade, pa neprovjereni, pa mrtvi/blokirani. */
-    private List<Channel> prioritize(List<Channel> in, final boolean balkanFirst) {
+    /**
+     * Besplatni kanali: (po zelji) BiH, Srbija, Hrvatska, ostale; unutar toga prvo kanali
+     * koji rade, pa neprovjereni, pa mrtvi/blokirani. Sortiranje je stabilno.
+     */
+    private List<Channel> prioritize(List<Channel> in, final boolean byCountry) {
         List<Channel> out = new ArrayList<>(in);
-        Collections.sort(out, new Comparator<Channel>() {   // stabilno sortiranje cuva redoslijed iz plejliste
+        Collections.sort(out, new Comparator<Channel>() {
             @Override public int compare(Channel a, Channel b) {
-                return rank(a, balkanFirst) - rank(b, balkanFirst);
+                return rank(a, byCountry) - rank(b, byCountry);
             }
         });
         return out;
     }
 
-    private int rank(Channel c, boolean balkanFirst) {
+    private int rank(Channel c, boolean byCountry) {
         int r = health.rank(c);
-        if (balkanFirst && !c.balkan) r += 10;
+        if (byCountry) {
+            int i = c.country == null ? -1 : PINNED.indexOf(c.country);
+            r += (i < 0 ? PINNED.size() : i) * 10;
+        }
         return r;
     }
 
-    /** U pozadini provjeri koji balkanski kanali rade. */
+    /**
+     * Provjera dostupnosti samo za besplatne kanale. Za prijavu (Xtream) se NE radi:
+     * vise istovremenih konekcija na takav server moze blokirati nalog.
+     */
     private void startHealthCheck() {
-        List<Channel> balkan = new ArrayList<>();
-        for (Channel c : repo.all) if (c.balkan) balkan.add(c);
-        // za plejliste bez balkanskih kanala provjeri manje liste u cijelosti
-        if (balkan.isEmpty() && repo.all.size() <= 600) balkan.addAll(repo.all);
-        if (balkan.isEmpty()) return;
-        health.check(balkan, new Health.Progress() {
+        if (repo.isXtream()) {
+            health.cancel(healthCheckId);
+            return;
+        }
+        healthCheckId = health.check(new ArrayList<>(repo.all), new Health.Progress() {
             @Override public void onProgress(int done, int total, boolean finished) {
-                if (total == 0) return;
+                if (isFinishing() || total == 0) return;
                 gridAdapter.notifyItemRangeChanged(0, gridAdapter.getItemCount());
                 if (finished) {
                     healthText = "";
@@ -583,6 +655,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         });
     }
 
+    private void clearSearch() {
+        handler.removeCallbacks(searchRunnable);
+        query = "";
+        search.setText("");
+        handler.removeCallbacks(searchRunnable);
+    }
+
     // ------------------------------------------------------------------ kanali
 
     @Override
@@ -605,17 +684,9 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     // ------------------------------------------------------------------ ostalo
 
     @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        health.cancel();
-    }
-
-    @Override
     public void onBackPressed() {
         if (!query.isEmpty()) {
-            search.setText("");
-            query = "";
-            handler.removeCallbacks(searchRunnable);
+            clearSearch();
             applyFilter(true);
             focusGrid();
             return;

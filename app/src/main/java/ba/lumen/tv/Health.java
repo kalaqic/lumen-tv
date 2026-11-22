@@ -86,8 +86,8 @@ public final class Health {
         prefs.edit().putString("data", o.toString()).apply();
     }
 
-    /** Provjeri kanale ciji status jos nije poznat. */
-    public void check(List<Channel> channels, final Progress progress) {
+    /** Provjeri kanale ciji status jos nije poznat. Vraca oznaku provjere (za cancel(int)). */
+    public int check(List<Channel> channels, final Progress progress) {
         cancel();
         final int gen = generation;
         final List<Channel> todo = new ArrayList<>();
@@ -97,7 +97,7 @@ public final class Health {
         final int total = todo.size();
         if (total == 0) {
             progress.onProgress(0, 0, true);
-            return;
+            return gen;
         }
         running = true;
         final AtomicInteger done = new AtomicInteger();
@@ -123,6 +123,12 @@ public final class Health {
             });
         }
         pool.shutdown();
+        return gen;
+    }
+
+    /** Zaustavi provjeru samo ako je to i dalje ta ista provjera (a ne neka novija). */
+    public void cancel(int gen) {
+        if (gen == generation) cancel();
     }
 
     public void cancel() {

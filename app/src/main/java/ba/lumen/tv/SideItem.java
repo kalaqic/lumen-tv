@@ -2,16 +2,14 @@ package ba.lumen.tv;
 
 /** Stavka u bocnom meniju. */
 public final class SideItem {
-    public static final int HEADER = 0, ALL = 1, FAVORITES = 2, RECENT = 3, CATEGORY = 4, COUNTRY = 5, BALKAN = 6,
-            PLAYLIST = 7, ADD = 8;
+    public static final int HEADER = 0, ALL = 1, FAVORITES = 2, RECENT = 3, CATEGORY = 4, COUNTRY = 5;
 
     public final int type;
     public final String key;
     public final String label;
     public int count;
-    public boolean activeFlag;   // oznacena aktivna plejlista
     public int icon;       // drawable ili 0
-    public String emoji;   // za drzave
+    public String emoji;   // zastava za drzave
 
     public SideItem(int type, String key, String label, int count) {
         this.type = type;

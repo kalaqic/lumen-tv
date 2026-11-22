@@ -211,6 +211,10 @@ public class PlayerActivity extends Activity {
         synchronized (PROBED) { cached = PROBED.get(c.url); }
         if (known != null || !c.url.toLowerCase(Locale.ROOT).startsWith("http")) {
             startStream(c, known);
+        } else if (repo.isXtream()) {
+            // Xtream: bez probne konekcije (server cesto dozvoljava samo 1 konekciju);
+            // live kanali su MPEG-TS, a ako ne uspije, plejer sam proba kao HLS
+            startStream(c, null);
         } else if (cached != null) {
             startStream(c, cached.isEmpty() ? null : cached);
         } else {

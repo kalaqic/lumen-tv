@@ -2,23 +2,26 @@ package ba.lumen.tv;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
-import android.widget.TextView;
 import android.widget.Toast;
 
+import java.net.URL;
 import java.net.URLEncoder;
 
 /**
  * Prijava na Xtream Codes IPTV uslugu. Host, korisnicko ime i lozinka unose se ovdje
- * i cuvaju se SAMO na uredaju (u listi plejlisti), nikad u kodu aplikacije.
+ * i cuvaju se SAMO na ovom uredaju, nikad u kodu aplikacije.
+ * Host i naziv se pamte, pa ih sljedeci put ne treba kucati.
  */
 public class XtreamActivity extends Activity {
 
     private Repo repo;
+    private SharedPreferences prefs;
     private EditText inName, inHost, inUser, inPass;
 
     @Override
@@ -28,20 +31,37 @@ public class XtreamActivity extends Activity {
         setContentView(R.layout.activity_xtream);
         Ui.applyFonts(getWindow().getDecorView());
         repo = Repo.get(this);
+        prefs = getSharedPreferences("lumen", Context.MODE_PRIVATE);
 
         inName = findViewById(R.id.in_name);
         inHost = findViewById(R.id.in_host);
         inUser = findViewById(R.id.in_user);
         inPass = findViewById(R.id.in_pass);
 
-        // Prefill host/naziv koje si ranije unio NA OVOM TV-u (nije u kodu, cuva se lokalno)
-        SharedPreferences sp = getSharedPreferences("lumen", Context.MODE_PRIVATE);
-        inHost.setText(sp.getString("xtream_host", ""));
-        inName.setText(sp.getString("xtream_name", ""));
+        String host = prefs.getString("xtream_host", "");
+        if (host.isEmpty()) host = hostFromSavedUrl();
+        inHost.setText(host);
+        inName.setText(prefs.getString("xtream_name", ""));
 
         findViewById(R.id.btn_login).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { login(); }
         });
+
+        // host je vec upisan -> kreni od korisnickog imena
+        if (!host.isEmpty()) inUser.requestFocus();
+        else inHost.requestFocus();
+    }
+
+    /** Host iz ranije sacuvanog Xtream linka (npr. nakon prelaska sa starije verzije). */
+    private String hostFromSavedUrl() {
+        String saved = prefs.getString("xtream_url", "");
+        if (saved.isEmpty()) return "";
+        try {
+            URL u = new URL(saved);
+            return u.getProtocol() + "://" + u.getHost() + (u.getPort() > 0 ? ":" + u.getPort() : "");
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     private void login() {
@@ -59,11 +79,12 @@ public class XtreamActivity extends Activity {
 
         String url;
         try {
+            new URL(host); // provjera ispravnosti adrese
             url = host + "/get.php?username=" + URLEncoder.encode(user, "UTF-8")
                     + "&password=" + URLEncoder.encode(pass, "UTF-8")
                     + "&type=m3u_plus&output=ts";
         } catch (Exception e) {
-            Toast.makeText(this, "Neispravan unos.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Adresa servera nije ispravna.", Toast.LENGTH_LONG).show();
             return;
         }
 
@@ -72,12 +93,14 @@ public class XtreamActivity extends Activity {
             int colon = h.indexOf(':');
             name = "Xtream · " + (colon > 0 ? h.substring(0, colon) : h);
         }
-        getSharedPreferences("lumen", Context.MODE_PRIVATE).edit()
-                .putString("xtream_host", host).putString("xtream_name", name).apply();
+        prefs.edit().putString("xtream_host", host).apply();
         hideKeyboard();
-        Repo.Playlist p = repo.addPlaylist(name, url);
-        repo.setActive(p.id);
+        repo.setXtream(name, url);
         Toast.makeText(this, "Prijava sačuvana na ovom TV-u.", Toast.LENGTH_SHORT).show();
+
+        Intent i = new Intent(this, MainActivity.class);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        startActivity(i);
         finish();
     }
 
