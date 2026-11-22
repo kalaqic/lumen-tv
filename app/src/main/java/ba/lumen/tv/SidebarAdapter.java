@@ -88,7 +88,8 @@ public final class SidebarAdapter extends RecyclerView.Adapter<RecyclerView.View
         }
         ItemVH vh = (ItemVH) holder;
         vh.label.setText(it.label);
-        vh.count.setText(it.count > 0 ? nf.format(it.count) : "");
+        vh.count.setText(it.type == SideItem.MOVIES || it.type == SideItem.SERIES ? "›"
+                : it.count > 0 ? nf.format(it.count) : "");
         boolean active = position == selected;
         vh.itemView.setActivated(active);
         if (it.emoji != null) {

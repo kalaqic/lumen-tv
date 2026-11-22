@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- zatamnjenje preko slike iz filma, da se tekst lijevo dobro cita -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="0"
+        android:centerColor="#D9111215"
+        android:centerX="0.45"
+        android:endColor="#66111215"
+        android:startColor="#FA111215" />
+</shape>

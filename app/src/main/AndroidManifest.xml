@@ -53,6 +53,31 @@
             android:windowSoftInputMode="adjustPan|stateHidden" />
 
         <activity
+            android:name=".VodActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen" />
+
+        <activity
+            android:name=".VodDetailActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen" />
+
+        <activity
+            android:name=".VodPlayerActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen.Player" />
+
+        <activity
+            android:name=".SubsSetupActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen" />
+
+        <activity
             android:name=".ListsActivity"
             android:exported="false"
             android:screenOrientation="landscape"

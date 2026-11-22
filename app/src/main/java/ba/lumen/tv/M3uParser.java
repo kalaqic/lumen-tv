@@ -130,7 +130,9 @@ public final class M3uParser {
                 cur.searchKey = normalize(cur.name);
                 cur.balkan = isBalkan(cur);
                 cur.listId = listId;
-                if (!cur.url.isEmpty() && seenUrls.add(cur.url)) out.add(cur);
+                // filmovi i serije iz Xtream liste nisu kanali (imaju svoj ekran)
+                boolean vod = smartMerge && isVodUrl(cur.url);
+                if (!vod && !cur.url.isEmpty() && seenUrls.add(cur.url)) out.add(cur);
                 cur = null;
             }
         }
@@ -349,6 +351,19 @@ public final class M3uParser {
         int slash = s.lastIndexOf('/');
         if (slash >= 0 && slash < s.length() - 1) s = s.substring(slash + 1);
         return s.isEmpty() ? "Kanal" : s;
+    }
+
+    /** Xtream film ili epizoda serije: ".../movie/U/P/123.mkv", ".../series/U/P/456.mp4". */
+    static boolean isVodUrl(String url) {
+        if (url == null) return false;
+        int q = url.indexOf('?');
+        String path = q >= 0 ? url.substring(0, q) : url;
+        int scheme = path.indexOf("://");
+        if (scheme >= 0) {
+            int slash = path.indexOf('/', scheme + 3);
+            path = slash >= 0 ? path.substring(slash) : "";
+        }
+        return path.startsWith("/movie/") || path.startsWith("/series/");
     }
 
     public static String normalize(String s) {

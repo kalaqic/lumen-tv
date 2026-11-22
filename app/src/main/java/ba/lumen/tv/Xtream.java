@@ -111,6 +111,21 @@ public final class Xtream {
         }
     }
 
+    /** Adresa player_api.php akcije (npr. get_vod_streams), sa dodatnim parametrima "a=b". */
+    public String api(String action, String extra) {
+        return host + "/player_api.php?username=" + enc(user) + "&password=" + enc(pass)
+                + "&action=" + action + (extra == null ? "" : "&" + extra);
+    }
+
+    /** Link za gledanje filma ("movie") ili epizode ("series"). */
+    public String vodUrl(String type, String id, String ext) {
+        return host + "/" + type + "/" + encPath(user) + "/" + encPath(pass) + "/" + id + "." + (ext == null ? "mp4" : ext);
+    }
+
+    static String httpGetPublic(String url) throws Exception {
+        return httpGet(url);
+    }
+
     /** Skini TV vodic za kanal (blokira – zvati van glavne niti). */
     public List<Program> fetchEpg(String streamId) throws Exception {
         String url = host + "/player_api.php?username=" + enc(user) + "&password=" + enc(pass)

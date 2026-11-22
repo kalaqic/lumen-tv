@@ -331,6 +331,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             allItem.icon = R.drawable.ic_grid;
             items.add(allItem);
             addLibrary(items);
+            // filmovi i serije imaju svoj ekran (otvara se sa OK)
+            SideItem movies = new SideItem(SideItem.MOVIES, null, "Filmovi", 0);
+            movies.icon = R.drawable.ic_movie;
+            items.add(movies);
+            SideItem series = new SideItem(SideItem.SERIES, null, "Serije", 0);
+            series.icon = R.drawable.ic_series;
+            items.add(series);
             addLists(items, all, true);
             if (cats.size() > 1) {
                 items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
@@ -462,13 +469,20 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     @Override
     public void onSideClick(int position) {
         cancelPendingSelect();
+        SideItem clicked = sideAdapter.get(position);
+        if (clicked != null && (clicked.type == SideItem.MOVIES || clicked.type == SideItem.SERIES)) {
+            Intent i = new Intent(this, VodActivity.class);
+            i.putExtra(VodActivity.EXTRA_KIND, clicked.type == SideItem.MOVIES ? Vod.MOVIE : Vod.SERIES);
+            startActivity(i);
+            return;
+        }
         select(position);
         focusGrid();
     }
 
     private void select(int position) {
         SideItem it = sideAdapter.get(position);
-        if (it == null || it.type == SideItem.HEADER) return;
+        if (it == null || it.type == SideItem.HEADER || it.type == SideItem.MOVIES || it.type == SideItem.SERIES) return;
         boolean changed = !it.sameAs(selected) || !query.isEmpty();
         selected = it;
         sideAdapter.setSelected(position);
@@ -506,6 +520,8 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         cancelPendingSelect();
         final SideItem target = sideAdapter.get(pos);
         if (target == null || target.type == SideItem.HEADER) return;
+        // Filmovi/Serije se otvaraju tek na OK, ne kad se fokus samo zaustavi na njima
+        if (target.type == SideItem.MOVIES || target.type == SideItem.SERIES) return;
         pendingSelect = new Runnable() {
             @Override public void run() {
                 pendingSelect = null;
