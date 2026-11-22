@@ -124,6 +124,11 @@ public final class Repo {
         return u != null && !u.isEmpty();
     }
 
+    /** Xtream pristup aktivne prijave (za TV vodic i arhivu); null za besplatne kanale. */
+    public Xtream xtream() {
+        return isXtream() ? Xtream.from(prefs.getString("xtream_url", null)) : null;
+    }
+
     public String xtreamName() {
         String n = prefs.getString("xtream_name", null);
         return n == null || n.isEmpty() ? "Moja prijava" : n;
