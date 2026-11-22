@@ -113,6 +113,23 @@
                 android:textSize="15sp" />
 
             <TextView
+                android:id="@+id/btn_xtream"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_button"
+                android:clickable="true"
+                android:drawableStart="@drawable/ic_tag"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingStart="18dp"
+                android:paddingEnd="38dp"
+                android:tag="semibold"
+                android:text="Xtream prijava (korisničko ime / lozinka)"
+                android:textColor="@color/text"
+                android:textSize="14sp" />
+
+            <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="26dp"

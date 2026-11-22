@@ -3,6 +3,7 @@ package ba.lumen.tv;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -148,6 +149,12 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                         onFocusMoved(oldFocus, newFocus);
                     }
                 });
+
+        SharedPreferences sp = getSharedPreferences("lumen", MODE_PRIVATE);
+        if (!sp.getBoolean("welcome_done", false)) {
+            sp.edit().putBoolean("welcome_done", true).apply();
+            startActivity(new Intent(this, WelcomeActivity.class));
+        }
 
         load(false);
         updater.checkOnStart();

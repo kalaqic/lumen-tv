@@ -32,6 +32,25 @@ import java.util.concurrent.Executors;
 public final class Repo {
 
     public static final String DEFAULT_URL = "https://iptv-org.github.io/iptv/index.m3u";
+
+    /** Lumen TV liste po drzavama (folder playlists/ u GitHub repozitoriju aplikacije). */
+    public static final String[][] COUNTRY_LISTS = {
+            {"ba", "\uD83C\uDDE7\uD83C\uDDE6", "Bosna i Hercegovina"},
+            {"hr", "\uD83C\uDDED\uD83C\uDDF7", "Hrvatska"},
+            {"rs", "\uD83C\uDDF7\uD83C\uDDF8", "Srbija"},
+            {"me", "\uD83C\uDDF2\uD83C\uDDEA", "Crna Gora"},
+            {"si", "\uD83C\uDDF8\uD83C\uDDEE", "Slovenija"},
+            {"mk", "\uD83C\uDDF2\uD83C\uDDF0", "Sjeverna Makedonija"},
+            {"xk", "\uD83C\uDDFD\uD83C\uDDF0", "Kosovo"},
+    };
+
+    /** Stara spojena "Balkan" lista iz ranije verzije – zamijenjena listama po drzavama. */
+    private static final String OLD_MERGED_PREFIX = "https://iptv-org.github.io/iptv/countries/ba.m3u\n";
+
+    public String countryListUrl(String code) {
+        return "https://raw.githubusercontent.com/" + app.getString(R.string.update_repo)
+                + "/main/playlists/" + code + ".m3u";
+    }
     static final String UA = "Mozilla/5.0 (Linux; Android 12; Android TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36";
     private static final long STALE_MS = 12L * 60 * 60 * 1000; // 12h
 
@@ -88,6 +107,31 @@ public final class Repo {
                 out.add(new Playlist(o.getString("id"), o.getString("name"), o.getString("url")));
             }
         } catch (Exception ignored) { }
+        boolean fresh = out.isEmpty();
+        if (!prefs.getBoolean("seeded_countries_v1", false)) {
+            // dodaj balkanske liste po drzavama i ukloni staru spojenu Balkan listu
+            String activeBefore = prefs.getString("active", null);
+            boolean removedActive = false;
+            for (int i = out.size() - 1; i >= 0; i--) {
+                if (out.get(i).url.startsWith(OLD_MERGED_PREFIX)) {
+                    if (out.get(i).id.equals(activeBefore)) removedActive = true;
+                    out.remove(i);
+                }
+            }
+            List<Playlist> seeded = new ArrayList<>();
+            for (String[] c : COUNTRY_LISTS) {
+                String url = countryListUrl(c[0]);
+                boolean exists = false;
+                for (Playlist p : out) if (p.url.equals(url)) { exists = true; break; }
+                if (!exists) seeded.add(new Playlist("c_" + c[0], c[1] + "  " + c[2], url));
+            }
+            out.addAll(0, seeded);
+            if (fresh) out.add(new Playlist("default", "IPTV-org · Svi kanali", DEFAULT_URL));
+            SharedPreferences.Editor ed = prefs.edit().putBoolean("seeded_countries_v1", true);
+            if (fresh || removedActive) ed.putString("active", "c_ba");
+            ed.apply();
+            savePlaylists(out);
+        }
         if (out.isEmpty()) {
             out.add(new Playlist("default", "IPTV-org · Svi kanali", DEFAULT_URL));
             savePlaylists(out);

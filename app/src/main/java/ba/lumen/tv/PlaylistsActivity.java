@@ -24,18 +24,9 @@ import java.util.List;
 public class PlaylistsActivity extends Activity {
 
     private static final String BASE = "https://iptv-org.github.io/iptv/";
-    /** Sve balkanske zemlje spojene u jednu plejlistu (jedan link po redu). */
-    static final String BALKAN_URLS = BASE + "countries/ba.m3u\n" + BASE + "countries/hr.m3u\n"
-            + BASE + "countries/rs.m3u\n" + BASE + "countries/me.m3u\n" + BASE + "countries/si.m3u\n"
-            + BASE + "countries/mk.m3u\n" + BASE + "countries/xk.m3u";
-
+    /** Svjetske liste (iptv-org). Balkanske liste po drzavama dolaze iz Repo.COUNTRY_LISTS. */
     private static final String[][] PRESETS = {
-            {"⭐", "Balkan · sve zemlje", BALKAN_URLS},
             {"🌍", "IPTV-org · Svi kanali", BASE + "index.m3u"},
-            {"🇧🇦", "Bosna i Hercegovina", BASE + "countries/ba.m3u"},
-            {"🇭🇷", "Hrvatska", BASE + "countries/hr.m3u"},
-            {"🇷🇸", "Srbija", BASE + "countries/rs.m3u"},
-            {"🇲🇪", "Crna Gora", BASE + "countries/me.m3u"},
             {"⚽", "Sport", BASE + "categories/sports.m3u"},
             {"📰", "Vijesti", BASE + "categories/news.m3u"},
             {"🎬", "Filmovi", BASE + "categories/movies.m3u"},
@@ -78,10 +69,18 @@ public class PlaylistsActivity extends Activity {
         findViewById(R.id.btn_save).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { saveFromInputs(); }
         });
+        findViewById(R.id.btn_xtream).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                startActivity(new android.content.Intent(PlaylistsActivity.this, XtreamActivity.class));
+            }
+        });
 
         LinearLayout presets = findViewById(R.id.presets);
         LayoutInflater inf = LayoutInflater.from(this);
-        for (final String[] p : PRESETS) {
+        List<String[]> all = new ArrayList<>();
+        for (String[] c : Repo.COUNTRY_LISTS) all.add(new String[]{c[1], c[2], repo.countryListUrl(c[0])});
+        for (String[] p : PRESETS) all.add(p);
+        for (final String[] p : all) {
             View row = inf.inflate(R.layout.item_preset, presets, false);
             Ui.applyFonts(row);
             ((TextView) row.findViewById(R.id.emoji)).setText(p[0]);

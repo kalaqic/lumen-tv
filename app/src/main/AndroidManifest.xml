@@ -39,6 +39,19 @@
             android:theme="@style/Theme.Lumen.Player" />
 
         <activity
+            android:name=".WelcomeActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen" />
+
+        <activity
+            android:name=".XtreamActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Lumen"
+            android:windowSoftInputMode="adjustPan|stateHidden" />
+
+        <activity
             android:name=".PlaylistsActivity"
             android:exported="false"
             android:screenOrientation="landscape"
