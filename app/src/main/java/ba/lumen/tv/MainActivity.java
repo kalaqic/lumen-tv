@@ -55,6 +55,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     private final NumberFormat nf = NumberFormat.getIntegerInstance(new Locale("bs"));
 
     private Runnable pendingSelect;
+    private Updater updater;
     private final Runnable searchRunnable = new Runnable() {
         @Override public void run() { applyFilter(true); }
     };
@@ -80,10 +81,14 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         search = findViewById(R.id.search);
         TextView version = findViewById(R.id.app_version);
         try {
-            version.setText("Lumen TV · verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
+            version.setText("Verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName + "  ·  provjeri ažuriranje");
         } catch (Exception e) {
-            version.setText("Lumen TV");
+            version.setText("Provjeri ažuriranje");
         }
+        updater = new Updater(this);
+        version.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { updater.check(true); }
+        });
 
         sideAdapter = new SidebarAdapter(this);
         side.setLayoutManager(new LinearLayoutManager(this));
@@ -142,11 +147,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                 });
 
         load(false);
+        updater.checkOnStart();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        updater.onResume();
         if (shownPlaylistId != null && !shownPlaylistId.equals(repo.activeId())) {
             load(false);
             return;

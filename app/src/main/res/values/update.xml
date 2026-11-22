@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- GitHub repozitorij odakle aplikacija provjerava i skida nove verzije -->
+    <string name="update_repo" translatable="false">kalaqic/lumen-tv</string>
+</resources>
