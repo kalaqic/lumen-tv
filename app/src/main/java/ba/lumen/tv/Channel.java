@@ -13,6 +13,8 @@ public final class Channel {
     public String userAgent;
     public String referrer;
     public String searchKey = "";  // mala slova bez dijakritika
+    public boolean geoBlocked;     // iptv-org oznaka [Geo-blocked]
+    public boolean balkan;         // kanal sa Balkana (BA, HR, RS, ME, SI, MK, XK)
     public int variant = 0;        // redni broj kad isti naziv ima vise izvora (1, 2, 3…)
     public int variantCount = 1;
 

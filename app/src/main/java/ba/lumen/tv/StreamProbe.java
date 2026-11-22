@@ -72,6 +72,56 @@ final class StreamProbe {
         }
     }
 
+    /** Brza provjera da li stream odgovara: Health.ONLINE / OFFLINE / BLOCKED. */
+    static int check(Channel c) {
+        HttpURLConnection conn = null;
+        try {
+            String current = c.url;
+            for (int hop = 0; hop < 6; hop++) {
+                conn = (HttpURLConnection) new URL(current).openConnection();
+                conn.setInstanceFollowRedirects(false);
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                conn.setRequestProperty("User-Agent", c.userAgent != null ? c.userAgent : Repo.UA);
+                if (c.referrer != null) conn.setRequestProperty("Referer", c.referrer);
+                conn.setRequestProperty("Accept", "*/*");
+                int code = conn.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    String loc = conn.getHeaderField("Location");
+                    conn.disconnect();
+                    conn = null;
+                    if (loc == null) return Health.OFFLINE;
+                    current = new URL(new URL(current), loc).toString();
+                    continue;
+                }
+                if (code == 401 || code == 403 || code == 451) return Health.BLOCKED;
+                if (code >= 400) return Health.OFFLINE;
+                byte[] buf = new byte[512];
+                int total = 0;
+                InputStream in = conn.getInputStream();
+                while (total < buf.length) {
+                    int n = in.read(buf, total, buf.length - total);
+                    if (n <= 0) break;
+                    total += n;
+                }
+                if (total == 0) return Health.OFFLINE;
+                String head = new String(buf, 0, total, "ISO-8859-1").trim();
+                // neki serveri vrate HTML stranicu "geo blocked" sa kodom 200
+                String low = head.toLowerCase(Locale.ROOT);
+                if (low.startsWith("<!doctype html") || low.startsWith("<html")) {
+                    return low.contains("block") || low.contains("country") || low.contains("region")
+                            ? Health.BLOCKED : Health.OFFLINE;
+                }
+                return Health.ONLINE;
+            }
+            return Health.OFFLINE;
+        } catch (Exception e) {
+            return Health.OFFLINE;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
     private static String fromUrl(String url) {
         String lower = url.toLowerCase(Locale.ROOT);
         int q = lower.indexOf('?');

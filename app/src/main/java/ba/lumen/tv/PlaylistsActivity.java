@@ -24,7 +24,13 @@ import java.util.List;
 public class PlaylistsActivity extends Activity {
 
     private static final String BASE = "https://iptv-org.github.io/iptv/";
+    /** Sve balkanske zemlje spojene u jednu plejlistu (jedan link po redu). */
+    static final String BALKAN_URLS = BASE + "countries/ba.m3u\n" + BASE + "countries/hr.m3u\n"
+            + BASE + "countries/rs.m3u\n" + BASE + "countries/me.m3u\n" + BASE + "countries/si.m3u\n"
+            + BASE + "countries/mk.m3u\n" + BASE + "countries/xk.m3u";
+
     private static final String[][] PRESETS = {
+            {"⭐", "Balkan · sve zemlje", BALKAN_URLS},
             {"🌍", "IPTV-org · Svi kanali", BASE + "index.m3u"},
             {"🇧🇦", "Bosna i Hercegovina", BASE + "countries/ba.m3u"},
             {"🇭🇷", "Hrvatska", BASE + "countries/hr.m3u"},
@@ -181,7 +187,8 @@ public class PlaylistsActivity extends Activity {
         public void onBindViewHolder(@NonNull VH vh, int position) {
             Repo.Playlist p = items.get(position);
             vh.name.setText(p.name);
-            vh.url.setText(p.url);
+            List<String> urls = Repo.urlsOf(p);
+            vh.url.setText(urls.size() > 1 ? urls.size() + " spojenih lista  ·  " + urls.get(0) : p.url);
             boolean active = p.id.equals(repo.activeId());
             vh.check.setVisibility(active ? View.VISIBLE : View.INVISIBLE);
             vh.checkBg.setAlpha(active ? 1f : 0.15f);

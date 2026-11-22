@@ -4,8 +4,11 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -20,10 +23,23 @@ public final class M3uParser {
     private static final Pattern COUNTRY = Pattern.compile("\\.([a-z]{2})(?:@|$)");
     private static final Pattern MARKS = Pattern.compile("\\p{InCombiningDiacriticalMarks}+");
 
+    private static final Set<String> BALKAN = new HashSet<>(Arrays.asList("BA", "HR", "RS", "ME", "SI", "MK", "XK"));
+
     private M3uParser() {}
+
+    static boolean isBalkan(Channel c) {
+        if (c.country != null && BALKAN.contains(c.country)) return true;
+        for (String g : c.groups) {
+            String l = g.toLowerCase(Locale.ROOT);
+            if (l.contains("balkan") || l.contains("ex-yu") || l.contains("exyu") || l.contains("yugo")
+                    || l.equals("bih") || l.equals("bosna") || l.equals("hrvatska") || l.equals("srbija")) return true;
+        }
+        return false;
+    }
 
     public static List<Channel> parse(BufferedReader reader) throws IOException {
         List<Channel> out = new ArrayList<>();
+        Set<String> seenUrls = new HashSet<>();
         Channel cur = null;
         String line;
         boolean first = true;
@@ -66,7 +82,8 @@ public final class M3uParser {
                 cur.url = url.trim();
                 if (cur.groups.length == 0) cur.groups = new String[]{"Undefined"};
                 cur.searchKey = normalize(cur.name);
-                if (!cur.url.isEmpty()) out.add(cur);
+                cur.balkan = isBalkan(cur);
+                if (!cur.url.isEmpty() && seenUrls.add(cur.url)) out.add(cur);
                 cur = null;
             }
         }
@@ -142,6 +159,9 @@ public final class M3uParser {
         }
         if (name.isEmpty() && tvgName != null) name = tvgName;
         c.rawName = name;
+
+        String lowerName = name.toLowerCase(Locale.ROOT);
+        if (lowerName.contains("[geo-blocked]") || lowerName.contains("[geo blocked]")) c.geoBlocked = true;
 
         Matcher qm = QUALITY.matcher(name);
         if (qm.find()) {

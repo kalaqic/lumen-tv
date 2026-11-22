@@ -35,7 +35,7 @@ import java.util.Map;
 public class MainActivity extends Activity implements SidebarAdapter.Listener, ChannelAdapter.Listener {
 
     /** Drzave koje se prikazuju na vrhu liste drzava. */
-    private static final List<String> PINNED = Arrays.asList("BA", "HR", "RS", "ME", "SI", "MK");
+    private static final List<String> PINNED = Arrays.asList("BA", "HR", "RS", "ME", "SI", "MK", "XK");
 
     private Repo repo;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -56,6 +56,8 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
 
     private Runnable pendingSelect;
     private Updater updater;
+    private Health health;
+    private String healthText = "";
     private final Runnable searchRunnable = new Runnable() {
         @Override public void run() { applyFilter(true); }
     };
@@ -67,6 +69,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         setContentView(R.layout.activity_main);
         Ui.applyFonts(findViewById(R.id.root));
         repo = Repo.get(this);
+        health = Health.get(this);
 
         side = findViewById(R.id.side_list);
         grid = findViewById(R.id.grid);
@@ -185,11 +188,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         if (force || repo.all.isEmpty() || !p.id.equals(repo.loadedPlaylistId)) {
             showLoading();
         }
+        if (force) health.clear();
         repo.load(force, new Repo.LoadCallback() {
             @Override public void onLoaded(List<Channel> channels, boolean fromCache) {
                 buildSidebar();
                 applyFilter(false);
                 if (!fromCache) toast("Učitano " + nf.format(channels.size()) + " kanala");
+                startHealthCheck();
             }
 
             @Override public void onError(String message) {
@@ -248,6 +253,13 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
 
         List<SideItem> items = new ArrayList<>();
         items.add(new SideItem(SideItem.HEADER, null, "Biblioteka", 0));
+        int balkanCount = 0;
+        for (Channel c : all) if (c.balkan) balkanCount++;
+        if (balkanCount > 0 && balkanCount < all.size()) {
+            SideItem balkan = new SideItem(SideItem.BALKAN, null, "Balkan", balkanCount);
+            balkan.icon = R.drawable.ic_globe;
+            items.add(balkan);
+        }
         SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
         allItem.icon = R.drawable.ic_grid;
         items.add(allItem);
@@ -405,6 +417,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             String q = M3uParser.normalize(query);
             out = new ArrayList<>();
             for (Channel c : repo.all) if (c.searchKey.contains(q)) out.add(c);
+            out = prioritize(out, true);
             sectionTitle = "Rezultati za „" + query + "“";
         } else {
             SideItem s = selected;
@@ -418,26 +431,34 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                     out = repo.recentChannels();
                     sectionTitle = "Nedavno gledano";
                     break;
+                case SideItem.BALKAN:
+                    out = new ArrayList<>();
+                    for (Channel c : repo.all) if (c.balkan) out.add(c);
+                    out = prioritize(out, false);
+                    sectionTitle = "Balkan";
+                    break;
                 case SideItem.CATEGORY:
                     out = new ArrayList<>();
                     for (Channel c : repo.all) {
                         for (String g : c.groups) if (g.equals(s.key)) { out.add(c); break; }
                     }
+                    out = prioritize(out, true);
                     sectionTitle = s.label;
                     break;
                 case SideItem.COUNTRY:
                     out = new ArrayList<>();
                     for (Channel c : repo.all) if (s.key.equals(c.country)) out.add(c);
+                    out = prioritize(out, false);
                     sectionTitle = s.emoji + "  " + s.label;
                     break;
                 default:
-                    out = new ArrayList<>(repo.all);
+                    out = prioritize(repo.all, true);
                     sectionTitle = "Svi kanali";
             }
         }
         title.setText(sectionTitle);
-        int n = out.size();
-        subtitle.setText(nf.format(n) + (n % 10 == 1 && n % 100 != 11 ? " kanal" : " kanala"));
+        shownCount = out.size();
+        updateSubtitle();
         repo.current = out;
         repo.currentTitle = sectionTitle;
         gridAdapter.setItems(out);
@@ -450,6 +471,56 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             firstFocusDone = true;
             focusGrid();
         }
+    }
+
+    private int shownCount = 0;
+
+    private void updateSubtitle() {
+        int n = shownCount;
+        String base = nf.format(n) + (n % 10 == 1 && n % 100 != 11 ? " kanal" : " kanala");
+        subtitle.setText(healthText.isEmpty() ? base : base + "   ·   " + healthText);
+    }
+
+    /** Balkan prvo (ako je trazeno), zatim kanali koji rade, pa neprovjereni, pa mrtvi/blokirani. */
+    private List<Channel> prioritize(List<Channel> in, final boolean balkanFirst) {
+        List<Channel> out = new ArrayList<>(in);
+        Collections.sort(out, new Comparator<Channel>() {   // stabilno sortiranje cuva redoslijed iz plejliste
+            @Override public int compare(Channel a, Channel b) {
+                return rank(a, balkanFirst) - rank(b, balkanFirst);
+            }
+        });
+        return out;
+    }
+
+    private int rank(Channel c, boolean balkanFirst) {
+        int r = health.rank(c);
+        if (balkanFirst && !c.balkan) r += 10;
+        return r;
+    }
+
+    /** U pozadini provjeri koji balkanski kanali rade. */
+    private void startHealthCheck() {
+        List<Channel> balkan = new ArrayList<>();
+        for (Channel c : repo.all) if (c.balkan) balkan.add(c);
+        // za plejliste bez balkanskih kanala provjeri manje liste u cijelosti
+        if (balkan.isEmpty() && repo.all.size() <= 600) balkan.addAll(repo.all);
+        if (balkan.isEmpty()) return;
+        health.check(balkan, new Health.Progress() {
+            @Override public void onProgress(int done, int total, boolean finished) {
+                if (total == 0) return;
+                gridAdapter.notifyItemRangeChanged(0, gridAdapter.getItemCount());
+                if (finished) {
+                    healthText = "";
+                    // presortiraj samo ako korisnik trenutno nije u mrezi kanala (da ne skace fokus)
+                    View f = getCurrentFocus();
+                    if (f == null || !isInside(grid, f)) applyFilter(false);
+                    else updateSubtitle();
+                } else {
+                    healthText = "provjeravam dostupnost " + done + "/" + total;
+                    updateSubtitle();
+                }
+            }
+        });
     }
 
     private void focusGrid() {
@@ -484,6 +555,12 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     }
 
     // ------------------------------------------------------------------ ostalo
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        health.cancel();
+    }
 
     @Override
     public void onBackPressed() {

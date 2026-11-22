@@ -10,6 +10,7 @@
     android:padding="9dp">
 
     <FrameLayout
+        android:id="@+id/logo_box"
         android:layout_width="match_parent"
         android:layout_height="92dp"
         android:background="@drawable/bg_logo_tile">
@@ -38,6 +39,32 @@
             android:layout_margin="7dp"
             android:src="@drawable/ic_star"
             android:tint="@color/gold"
+            android:visibility="gone" />
+
+        <View
+            android:id="@+id/online_dot"
+            android:layout_width="11dp"
+            android:layout_height="11dp"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="7dp"
+            android:background="@drawable/bg_dot_online"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="6dp"
+            android:background="@drawable/bg_status_bad"
+            android:letterSpacing="0.06"
+            android:paddingStart="6dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="2dp"
+            android:tag="bold"
+            android:textColor="@android:color/white"
+            android:textSize="9.5sp"
             android:visibility="gone" />
 
         <TextView

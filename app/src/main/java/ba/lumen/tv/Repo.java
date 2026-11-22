@@ -176,7 +176,7 @@ public final class Repo {
                 }
                 if (result == null || result.isEmpty()) {
                     try {
-                        download(p.url, cache);
+                        fetchPlaylist(p, cache);
                         result = parseFile(cache);
                         fromCache = false;
                     } catch (Exception e) {
@@ -214,7 +214,7 @@ public final class Repo {
                 try {
                     File cache = cacheFile(p);
                     File tmp = new File(app.getFilesDir(), "refresh.tmp");
-                    download(p.url, tmp);
+                    fetchPlaylist(p, tmp);
                     final List<Channel> res = parseFile(tmp);
                     if (res.isEmpty()) return;
                     //noinspection ResultOfMethodCallIgnored
@@ -237,6 +237,56 @@ public final class Repo {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(f), "UTF-8"), 64 * 1024)) {
             return M3uParser.parse(r);
         }
+    }
+
+    /** Lista linkova plejliste (jedna plejlista moze spajati vise M3U linkova, jedan po redu). */
+    public static List<String> urlsOf(Playlist p) {
+        List<String> out = new ArrayList<>();
+        for (String u : p.url.split("\\s*\\n\\s*")) {
+            String t = u.trim();
+            if (!t.isEmpty()) out.add(t);
+        }
+        return out;
+    }
+
+    /** Skida jednu ili vise M3U plejlisti i spaja ih u jedan fajl. */
+    private void fetchPlaylist(Playlist p, File target) throws Exception {
+        List<String> urls = urlsOf(p);
+        if (urls.size() <= 1) {
+            download(urls.isEmpty() ? p.url : urls.get(0), target);
+            return;
+        }
+        File part = new File(app.getFilesDir(), "part.tmp");
+        File combined = new File(target.getPath() + ".combined");
+        int ok = 0;
+        Exception last = null;
+        try (OutputStream out = new FileOutputStream(combined)) {
+            out.write("#EXTM3U\n".getBytes("UTF-8"));
+            for (String u : urls) {
+                try {
+                    download(u, part);
+                    try (InputStream in = new FileInputStream(part)) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+                    }
+                    out.write('\n');
+                    ok++;
+                } catch (Exception e) {
+                    last = e;
+                }
+            }
+        }
+        //noinspection ResultOfMethodCallIgnored
+        part.delete();
+        if (ok == 0) {
+            //noinspection ResultOfMethodCallIgnored
+            combined.delete();
+            throw last != null ? last : new Exception("Nijedna lista se ne može učitati");
+        }
+        //noinspection ResultOfMethodCallIgnored
+        target.delete();
+        if (!combined.renameTo(target)) throw new Exception("Ne mogu sačuvati plejlistu");
     }
 
     private void download(String url, File target) throws Exception {
@@ -300,6 +350,11 @@ public final class Repo {
     }
 
     public int favoriteCount() { return favorites.size(); }
+
+    public boolean hasPlaylistUrl(String url) {
+        for (Playlist p : playlists()) if (p.url.equals(url)) return true;
+        return false;
+    }
 
     public void addRecent(Channel c) {
         recents.remove(c.url);

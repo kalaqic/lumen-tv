@@ -130,6 +130,7 @@ public class PlayerActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         probeExec.shutdownNow();
+        Health.get(this).save();
     }
 
     @Override
@@ -166,6 +167,9 @@ public class PlayerActivity extends Activity {
                 } else if (state == Player.STATE_READY) {
                     buffering.setVisibility(View.GONE);
                     errorView.setVisibility(View.GONE);
+                    if (playingIndex >= 0 && playingIndex < list.size()) {
+                        Health.get(PlayerActivity.this).set(list.get(playingIndex).url, Health.ONLINE);
+                    }
                 } else if (state == Player.STATE_ENDED) {
                     // live stream ne bi trebao zavrsiti – pokusaj ponovo
                     if (player != null) { player.seekToDefaultPosition(); player.prepare(); }
@@ -289,6 +293,8 @@ public class PlayerActivity extends Activity {
         buffering.setVisibility(View.GONE);
         errorView.setVisibility(View.VISIBLE);
         errorText.setText(describe(error));
+        Health.get(this).set(c.url, error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
+                ? Health.BLOCKED : Health.OFFLINE);
         showInfo(c);
     }
 

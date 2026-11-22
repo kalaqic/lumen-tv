@@ -86,6 +86,25 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
             vh.quality.setVisibility(View.GONE);
         }
         vh.fav.setVisibility(repo.isFavorite(c) ? View.VISIBLE : View.GONE);
+        int st = Health.get(vh.itemView.getContext()).status(c.url);
+        vh.onlineDot.setVisibility(st == Health.ONLINE ? View.VISIBLE : View.GONE);
+        if (st == Health.OFFLINE || st == Health.BLOCKED) {
+            vh.status.setVisibility(View.VISIBLE);
+            vh.status.setText(st == Health.BLOCKED ? "BLOKIRAN" : "NE RADI");
+            vh.status.setBackgroundResource(R.drawable.bg_status_bad);
+            vh.logoBox.setAlpha(0.4f);
+            vh.name.setAlpha(0.55f);
+        } else if (st == Health.UNKNOWN && c.geoBlocked) {
+            vh.status.setVisibility(View.VISIBLE);
+            vh.status.setText("GEO");
+            vh.status.setBackgroundResource(R.drawable.bg_chip);
+            vh.logoBox.setAlpha(1f);
+            vh.name.setAlpha(1f);
+        } else {
+            vh.status.setVisibility(View.GONE);
+            vh.logoBox.setAlpha(1f);
+            vh.name.setAlpha(1f);
+        }
         Logos.bind(vh.logo, vh.initials, c);
         boolean focused = vh.itemView.isFocused();
         vh.itemView.setScaleX(focused ? 1.09f : 1f);
@@ -101,10 +120,14 @@ public final class ChannelAdapter extends RecyclerView.Adapter<ChannelAdapter.VH
     }
 
     static final class VH extends RecyclerView.ViewHolder {
-        final TextView name, meta, quality, initials;
+        final TextView name, meta, quality, initials, status;
         final ImageView logo, fav;
+        final View logoBox, onlineDot;
         VH(View v) {
             super(v);
+            status = v.findViewById(R.id.status);
+            logoBox = v.findViewById(R.id.logo_box);
+            onlineDot = v.findViewById(R.id.online_dot);
             name = v.findViewById(R.id.name);
             meta = v.findViewById(R.id.meta);
             quality = v.findViewById(R.id.quality);
