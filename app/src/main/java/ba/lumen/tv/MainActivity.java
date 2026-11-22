@@ -53,6 +53,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     private String query = "";
     private String shownPlaylistId;
     private boolean firstFocusDone = false;
+    private boolean focusGridAfterLoad = false;
     private final NumberFormat nf = NumberFormat.getIntegerInstance(new Locale("bs"));
 
     private Runnable pendingSelect;
@@ -85,14 +86,11 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         search = findViewById(R.id.search);
         TextView version = findViewById(R.id.app_version);
         try {
-            version.setText("Verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName + "  ·  provjeri ažuriranje");
+            version.setText("Lumen TV · verzija " + getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
         } catch (Exception e) {
-            version.setText("Provjeri ažuriranje");
+            version.setText("Lumen TV");
         }
         updater = new Updater(this);
-        version.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { updater.check(true); }
-        });
 
         sideAdapter = new SidebarAdapter(this);
         side.setLayoutManager(new LinearLayoutManager(this));
@@ -110,10 +108,8 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         findViewById(R.id.btn_refresh).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { load(true); }
         });
-        findViewById(R.id.btn_playlists).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                startActivity(new Intent(MainActivity.this, PlaylistsActivity.class));
-            }
+        findViewById(R.id.btn_update).setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { updater.check(true); }
         });
         retryBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { load(true); }
@@ -200,6 +196,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             @Override public void onLoaded(List<Channel> channels, boolean fromCache) {
                 buildSidebar();
                 applyFilter(false);
+                if (focusGridAfterLoad) { focusGridAfterLoad = false; focusGrid(); }
                 if (!fromCache) toast("Učitano " + nf.format(channels.size()) + " kanala");
                 startHealthCheck();
             }
@@ -259,6 +256,27 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         }
 
         List<SideItem> items = new ArrayList<>();
+
+        // ----- Plejliste (izvori) -----
+        items.add(new SideItem(SideItem.HEADER, null, "Plejliste", 0));
+        String activeId = repo.activeId();
+        for (Repo.Playlist pl : repo.playlists()) {
+            String emoji = null, label = pl.name;
+            int sp = pl.name.indexOf("  ");
+            if (sp > 0 && sp <= 6) {       // vodeci emoji (zastava) odvojen od naziva
+                emoji = pl.name.substring(0, sp).trim();
+                label = pl.name.substring(sp).trim();
+            }
+            SideItem pi = new SideItem(SideItem.PLAYLIST, pl.id, label, 0);
+            pi.activeFlag = pl.id.equals(activeId);
+            if (emoji != null) pi.emoji = emoji;
+            else pi.icon = R.drawable.ic_list;
+            items.add(pi);
+        }
+        SideItem add = new SideItem(SideItem.ADD, null, "Dodaj / Xtream prijava", 0);
+        add.icon = R.drawable.ic_add;
+        items.add(add);
+
         items.add(new SideItem(SideItem.HEADER, null, "Biblioteka", 0));
         int balkanCount = 0;
         for (Channel c : all) if (c.balkan) balkanCount++;
@@ -317,9 +335,11 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             }
         }
 
-        // zadrzi prethodni odabir ako postoji
-        int sel = 1;
-        if (selected != null) {
+        // podrazumijevani odabir: "Svi kanali"; inace zadrzi prethodni filter
+        int sel = -1;
+        for (int i = 0; i < items.size(); i++) if (items.get(i).type == SideItem.ALL) { sel = i; break; }
+        if (sel < 0) sel = 1;
+        if (selected != null && selected.type != SideItem.PLAYLIST && selected.type != SideItem.ADD) {
             for (int i = 0; i < items.size(); i++) if (items.get(i).sameAs(selected)) { sel = i; break; }
         }
         sideAdapter.selected = sel;
@@ -344,13 +364,34 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     @Override
     public void onSideClick(int position) {
         if (pendingSelect != null) handler.removeCallbacks(pendingSelect);
+        SideItem it = sideAdapter.get(position);
+        if (it != null && it.type == SideItem.ADD) {
+            startActivity(new Intent(this, PlaylistsActivity.class));
+            return;
+        }
+        if (it != null && it.type == SideItem.PLAYLIST) {
+            switchPlaylist(it.key);
+            return;
+        }
         select(position);
         focusGrid();
     }
 
+    private void switchPlaylist(String id) {
+        if (id == null || id.equals(repo.activeId())) { focusGrid(); return; }
+        repo.setActive(id);
+        selected = null;
+        query = "";
+        search.setText("");
+        handler.removeCallbacks(searchRunnable);
+        focusGridAfterLoad = true;
+        load(false);
+    }
+
     private void select(int position) {
         SideItem it = sideAdapter.get(position);
-        if (it == null || it.type == SideItem.HEADER) return;
+        if (it == null || it.type == SideItem.HEADER
+                || it.type == SideItem.PLAYLIST || it.type == SideItem.ADD) return;
         boolean changed = !it.sameAs(selected);
         selected = it;
         sideAdapter.setSelected(position);

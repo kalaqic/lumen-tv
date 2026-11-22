@@ -2,6 +2,7 @@ package ba.lumen.tv;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
@@ -32,6 +33,11 @@ public class XtreamActivity extends Activity {
         inHost = findViewById(R.id.in_host);
         inUser = findViewById(R.id.in_user);
         inPass = findViewById(R.id.in_pass);
+
+        // Prefill host/naziv koje si ranije unio NA OVOM TV-u (nije u kodu, cuva se lokalno)
+        SharedPreferences sp = getSharedPreferences("lumen", Context.MODE_PRIVATE);
+        inHost.setText(sp.getString("xtream_host", ""));
+        inName.setText(sp.getString("xtream_name", ""));
 
         findViewById(R.id.btn_login).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { login(); }
@@ -66,6 +72,8 @@ public class XtreamActivity extends Activity {
             int colon = h.indexOf(':');
             name = "Xtream · " + (colon > 0 ? h.substring(0, colon) : h);
         }
+        getSharedPreferences("lumen", Context.MODE_PRIVATE).edit()
+                .putString("xtream_host", host).putString("xtream_name", name).apply();
         hideKeyboard();
         Repo.Playlist p = repo.addPlaylist(name, url);
         repo.setActive(p.id);

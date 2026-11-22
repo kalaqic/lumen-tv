@@ -85,7 +85,7 @@ public final class SidebarAdapter extends RecyclerView.Adapter<RecyclerView.View
         ItemVH vh = (ItemVH) holder;
         vh.label.setText(it.label);
         vh.count.setText(it.count > 0 ? nf.format(it.count) : "");
-        boolean active = position == selected;
+        boolean active = position == selected || it.activeFlag;
         vh.itemView.setActivated(active);
         if (it.emoji != null) {
             vh.emoji.setVisibility(View.VISIBLE);

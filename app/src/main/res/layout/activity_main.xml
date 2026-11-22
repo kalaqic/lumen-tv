@@ -85,18 +85,12 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:layout_marginBottom="14dp"
-            android:background="@drawable/bg_side_item"
-            android:clickable="true"
-            android:drawableStart="@drawable/ic_refresh"
-            android:drawablePadding="10dp"
-            android:focusable="true"
-            android:gravity="center_vertical"
+            android:focusable="false"
             android:paddingStart="12dp"
             android:paddingTop="9dp"
-            android:paddingEnd="12dp"
             android:paddingBottom="9dp"
-            android:textColor="@color/side_count"
-            android:textSize="11.5sp" />
+            android:textColor="@color/text_3"
+            android:textSize="11sp" />
     </LinearLayout>
 
     <!-- ===== Sadrzaj ===== -->
@@ -179,20 +173,20 @@
                 android:textSize="14sp" />
 
             <TextView
-                android:id="@+id/btn_playlists"
+                android:id="@+id/btn_update"
                 android:layout_width="wrap_content"
                 android:layout_height="46dp"
                 android:layout_marginStart="10dp"
                 android:background="@drawable/bg_button"
                 android:clickable="true"
-                android:drawableStart="@drawable/ic_list"
+                android:drawableStart="@drawable/ic_refresh"
                 android:drawablePadding="8dp"
                 android:focusable="true"
                 android:gravity="center"
                 android:paddingStart="16dp"
                 android:paddingEnd="18dp"
                 android:tag="medium"
-                android:text="@string/playlists"
+                android:text="Ažuriraj"
                 android:textColor="@color/text"
                 android:textSize="14sp" />
         </LinearLayout>
