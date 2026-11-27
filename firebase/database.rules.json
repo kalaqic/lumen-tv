@@ -1,0 +1,60 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "pairing": {
+      "$code": {
+        ".read": "auth != null && (data.child('tv').val() === auth.uid || auth.token.firebase.sign_in_provider !== 'anonymous')",
+        ".write": "auth != null && ((!data.exists() && newData.child('tv').val() === auth.uid) || (data.child('tv').val() === auth.uid && !newData.exists()))",
+        ".validate": "$code.matches(/^[A-Z0-9]{6}$/) && newData.hasChildren(['tv', 't'])",
+        "tv": { ".validate": "newData.isString()" },
+        "t": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+        "name": { ".validate": "newData.isString() && newData.val().length <= 80" },
+        "claim": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider !== 'anonymous' && !data.exists() && data.parent().exists() && data.parent().child('t').val() > now - 900000",
+          ".validate": "newData.hasChildren(['owner']) && newData.child('owner').val() === auth.uid",
+          "owner": { ".validate": "newData.isString()" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "owners": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || data.child('devices').child(auth.uid).exists())",
+        ".write": "auth != null && auth.uid === $uid && auth.token.firebase.sign_in_provider !== 'anonymous'",
+        "lists": {
+          ".write": "auth != null && data.parent().child('devices').child(auth.uid).exists()",
+          "$id": {
+            ".validate": "newData.hasChildren(['type', 'name', 'url'])",
+            "type": { ".validate": "newData.val() === 'login' || newData.val() === 'link'" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+            "url": { ".validate": "newData.isString() && newData.val().length <= 2000 && newData.val().matches(/^https?:\\/\\/.+/)" },
+            "t": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+        "devices": {
+          "$tv": {
+            ".write": "auth != null && auth.uid === $tv && !newData.exists()",
+            ".validate": "newData.hasChildren(['name', 't'])",
+            "name": { ".validate": "newData.isString() && newData.val().length <= 80" },
+            "t": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        },
+        "subs": {
+          ".validate": "newData.hasChildren(['key'])",
+          "key": { ".validate": "newData.isString() && newData.val().length >= 10 && newData.val().length <= 200" },
+          "user": { ".validate": "newData.isString() && newData.val().length <= 100" },
+          "pass": { ".validate": "newData.isString() && newData.val().length <= 200" },
+          "$other": { ".validate": false }
+        },
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}

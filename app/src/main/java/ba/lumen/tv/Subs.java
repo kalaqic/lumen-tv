@@ -74,6 +74,19 @@ public final class Subs {
 
     public void clear() { prefs.edit().clear().apply(); }
 
+    /** Podesavanje sa sajta (null kljuc = obrisano). Vraca true ako se promijenilo. */
+    public boolean replaceFromCloud(String key, String user, String pass) {
+        String k = key == null ? "" : key.trim(), u = user == null ? "" : user.trim(), p = pass == null ? "" : pass;
+        if (k.equals(prefs.getString("api_key", "")) && u.equals(prefs.getString("user", ""))
+                && p.equals(prefs.getString("pass", ""))) return false;
+        if (k.isEmpty()) {
+            prefs.edit().remove("api_key").remove("user").remove("pass").remove("token").remove("token_time").apply();
+        } else {
+            save(k, u, p);
+        }
+        return true;
+    }
+
     // ------------------------------------------------------------------ pretraga
 
     /**

@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.List;
 
@@ -22,7 +23,10 @@ public class WelcomeActivity extends Activity {
     /** Extra: otvoreno iz glavnog ekrana radi promjene profila. */
     public static final String EXTRA_SWITCH = "switch";
 
+    private static final int REQ_PAIR = 1;
+
     private Repo repo;
+    private Cloud cloud;
     private boolean switching;
     private boolean firstFocus = true;
     private boolean ui;
@@ -31,6 +35,7 @@ public class WelcomeActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repo = Repo.get(this);
+        cloud = Cloud.get(this);
         switching = getIntent().getBooleanExtra(EXTRA_SWITCH, false);
 
         if (!switching && repo.mode() != null) {
@@ -52,10 +57,14 @@ public class WelcomeActivity extends Activity {
         findViewById(R.id.opt_logins).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 if (repo.logins().isEmpty()) {
-                    // jos nema prijave: odmah na formu (Welcome ostaje ispod za "Nazad")
-                    Intent i = new Intent(WelcomeActivity.this, XtreamActivity.class);
-                    i.putExtra(XtreamActivity.EXTRA_TYPE, XtreamActivity.TYPE_LOGIN);
-                    startActivity(i);
+                    // jos nema prijave: povezi TV sa sajtom, ili pokazi gdje se dodaju liste
+                    if (!cloud.paired()) {
+                        startActivityForResult(new Intent(WelcomeActivity.this, PairActivity.class), REQ_PAIR);
+                    } else {
+                        Toast.makeText(WelcomeActivity.this, "Još nema prijava. Dodaj prijavu na sajtu " + cloud.siteLabel() + ".",
+                                Toast.LENGTH_LONG).show();
+                        startActivity(new Intent(WelcomeActivity.this, ListsActivity.class));
+                    }
                 } else {
                     repo.setLoginsMode();
                     openMain();
@@ -79,6 +88,26 @@ public class WelcomeActivity extends Activity {
         super.onResume();
         if (!ui) return; // preusmjereno na glavni ekran
         refreshLabels();
+        // liste su mozda promijenjene na sajtu
+        cloud.syncAsync(new Cloud.Callback() {
+            @Override public void onSync(int r) {
+                if (!isFinishing() && (r == Cloud.SYNC_CHANGED || r == Cloud.SYNC_UNPAIRED)) refreshLabels();
+            }
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != REQ_PAIR || resultCode != RESULT_OK) return;
+        if (!repo.logins().isEmpty()) {
+            // prijave sa sajta su stigle: odmah na kanale
+            repo.setLoginsMode();
+            openMain();
+        } else {
+            Toast.makeText(this, "Povezano. Dodaj prijavu na sajtu i pojaviće se na TV-u.", Toast.LENGTH_LONG).show();
+            startActivity(new Intent(this, ListsActivity.class));
+        }
     }
 
     /** Opisi profila (broj prijava/linkova se mijenja nakon "Upravljaj listama"). */
@@ -93,7 +122,9 @@ public class WelcomeActivity extends Activity {
 
         TextView loginsSub = findViewById(R.id.opt_logins_sub);
         if (logins.isEmpty()) {
-            loginsSub.setText("Dodaj prijavu na svoju IPTV uslugu (Xtream)");
+            loginsSub.setText(cloud.paired()
+                    ? "Dodaj prijavu na sajtu " + cloud.siteLabel()
+                    : "Poveži TV sa sajtom i dodaj prijavu (bez kucanja na TV-u)");
         } else if (logins.size() == 1) {
             loginsSub.setText(logins.get(0).name);
         } else {

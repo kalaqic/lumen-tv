@@ -27,13 +27,28 @@
                 android:textSize="28sp" />
 
             <TextView
+                android:id="@+id/lists_intro"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
                 android:lineSpacingExtra="2dp"
-                android:text="Prijave i linkovi bez prijave su odvojeni. Sve prijave su zajedno u „Moje prijave“. Pritisni OK na listi dvaput da je ukloniš."
                 android:textColor="@color/text_2"
                 android:textSize="14sp" />
+
+            <!-- povezan / poveži TV -->
+            <LinearLayout
+                android:id="@+id/row_pair"
+                style="@style/OptionRow"
+                android:layout_marginTop="20dp">
+
+                <TextView
+                    android:id="@+id/pair_title"
+                    style="@style/OptionTitle" />
+
+                <TextView
+                    android:id="@+id/pair_sub"
+                    style="@style/OptionSub" />
+            </LinearLayout>
 
             <TextView
                 style="@style/SectionHeader"
@@ -45,20 +60,6 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <LinearLayout
-                android:id="@+id/add_login"
-                style="@style/OptionRow"
-                android:layout_marginTop="8dp">
-
-                <TextView
-                    style="@style/OptionTitle"
-                    android:text="+  Dodaj prijavu" />
-
-                <TextView
-                    style="@style/OptionSub"
-                    android:text="Server, korisničko ime i lozinka, ili cijeli get.php link" />
-            </LinearLayout>
-
             <TextView
                 style="@style/SectionHeader"
                 android:text="BESPLATNI KANALI · LINKOVI BEZ PRIJAVE" />
@@ -69,19 +70,17 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <LinearLayout
-                android:id="@+id/add_link"
-                style="@style/OptionRow"
-                android:layout_marginTop="8dp">
+            <TextView
+                style="@style/SectionHeader"
+                android:text="TITLOVI SA INTERNETA" />
 
-                <TextView
-                    style="@style/OptionTitle"
-                    android:text="+  Dodaj M3U link" />
-
-                <TextView
-                    style="@style/OptionSub"
-                    android:text="Javna plejlista koja ne traži prijavu" />
-            </LinearLayout>
+            <TextView
+                android:id="@+id/subs_state"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="10dp"
+                android:textColor="@color/text_3"
+                android:textSize="14sp" />
 
             <TextView
                 android:id="@+id/btn_done"

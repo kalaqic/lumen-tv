@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        ID Firebase projekta za sajt sa listama (npr. "lumen-tv-1234").
+        Sajt je onda https://<ID>.web.app i TV odatle sam preuzme sva podesavanja.
+        Isti ID upisi u firebase/.firebaserc.
+    -->
+    <string name="firebase_project" translatable="false">LUMEN_FIREBASE_PROJECT</string>
+</resources>

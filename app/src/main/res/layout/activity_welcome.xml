@@ -68,11 +68,11 @@
 
             <TextView
                 style="@style/OptionTitle"
-                android:text="Upravljaj listama" />
+                android:text="Liste i sajt" />
 
             <TextView
                 style="@style/OptionSub"
-                android:text="Dodaj ili ukloni prijave i M3U linkove" />
+                android:text="Liste se dodaju na sajtu, ovdje ih vidiš i povežeš TV" />
         </LinearLayout>
 
         <TextView

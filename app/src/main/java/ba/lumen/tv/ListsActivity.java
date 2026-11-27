@@ -3,6 +3,8 @@ package ba.lumen.tv;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -13,15 +15,38 @@ import java.net.URL;
 import java.util.List;
 
 /**
- * Upravljanje listama: Xtream prijave (profil "Moje prijave") i obicni M3U linkovi
- * (profil "Besplatni kanali") su u dva odvojena odjeljka. Brisanje: OK dvaput na listi.
+ * Pregled lista na TV-u. Liste se dodaju i brisu na sajtu, ovdje se samo vide.
+ * Dok je ekran otvoren, liste se osvjezavaju svakih par sekundi, pa se nova lista
+ * dodana na telefonu pojavi odmah.
  */
 public class ListsActivity extends Activity {
 
+    private static final int REQ_PAIR = 1;
+    private static final long POLL_MS = 5000;
+
     private Repo repo;
+    private Cloud cloud;
     private ViewGroup loginsBox, linksBox;
-    /** id liste koja ceka drugi OK za brisanje. */
-    private String armedId;
+    private TextView pairTitle, pairSub, intro, subsState;
+    private boolean unpairArmed;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
+    private final Runnable poll = new Runnable() {
+        @Override public void run() {
+            if (!cloud.paired()) return;
+            cloud.syncAsync(new Cloud.Callback() {
+                @Override public void onSync(int r) {
+                    if (isFinishing()) return;
+                    if (r == Cloud.SYNC_CHANGED || r == Cloud.SYNC_UNPAIRED) fill();
+                    if (r == Cloud.SYNC_UNPAIRED) {
+                        Toast.makeText(ListsActivity.this, "Ovaj TV je odspojen sa sajta.", Toast.LENGTH_LONG).show();
+                    }
+                    handler.removeCallbacks(poll);
+                    handler.postDelayed(poll, POLL_MS);
+                }
+            });
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,101 +55,114 @@ public class ListsActivity extends Activity {
         setContentView(R.layout.activity_lists);
         Ui.applyFonts(getWindow().getDecorView());
         repo = Repo.get(this);
+        cloud = Cloud.get(this);
         loginsBox = findViewById(R.id.logins_box);
         linksBox = findViewById(R.id.links_box);
+        pairTitle = findViewById(R.id.pair_title);
+        pairSub = findViewById(R.id.pair_sub);
+        intro = findViewById(R.id.lists_intro);
+        subsState = findViewById(R.id.subs_state);
 
-        findViewById(R.id.add_login).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { openForm(XtreamActivity.TYPE_LOGIN); }
+        final View pairRow = findViewById(R.id.row_pair);
+        pairRow.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                if (!cloud.paired()) {
+                    startActivityForResult(new Intent(ListsActivity.this, PairActivity.class), REQ_PAIR);
+                } else if (unpairArmed) {
+                    unpairArmed = false;
+                    cloud.unpair();
+                    fill();
+                    Toast.makeText(ListsActivity.this, "TV je odspojen. Liste sa sajta su uklonjene sa TV-a.", Toast.LENGTH_LONG).show();
+                } else {
+                    unpairArmed = true;
+                    pairSub.setText("Pritisni OK još jednom da odspojiš ovaj TV");
+                    pairSub.setTextColor(getResources().getColor(R.color.live));
+                }
+            }
         });
-        findViewById(R.id.add_link).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { openForm(XtreamActivity.TYPE_LINK); }
+        pairRow.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean hasFocus) {
+                if (!hasFocus && unpairArmed) { unpairArmed = false; fill(); }
+            }
         });
         findViewById(R.id.btn_done).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { done(); }
+            @Override public void onClick(View v) { finish(); }
         });
+        pairRow.requestFocus();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        armedId = null;
         fill();
-        View first = loginsBox.getChildCount() > 0 ? loginsBox.getChildAt(0) : findViewById(R.id.add_login);
-        if (getCurrentFocus() == null) first.requestFocus();
+        handler.removeCallbacks(poll);
+        handler.post(poll);
     }
 
-    private void openForm(String type) {
-        Intent i = new Intent(this, XtreamActivity.class);
-        i.putExtra(XtreamActivity.EXTRA_TYPE, type);
-        startActivity(i);
+    @Override
+    protected void onPause() {
+        super.onPause();
+        handler.removeCallbacks(poll);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_PAIR && resultCode == RESULT_OK) {
+            fill();
+            if (repo.logins().isEmpty() && repo.links().isEmpty()) {
+                Toast.makeText(this, "Povezano. Dodaj listu na sajtu i pojaviće se ovdje.", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     private void fill() {
-        fillBox(loginsBox, repo.logins(), true);
-        fillBox(linksBox, repo.links(), false);
+        boolean paired = cloud.paired();
+        String site = cloud.siteLabel();
+        intro.setText(paired
+                ? "Liste dodaješ i brišeš na sajtu " + site + ". Prijave idu u „Moje prijave“, linkovi bez prijave u „Besplatni kanali“."
+                : "Liste se dodaju na sajtu " + site + " (telefon ili računar). Prvo poveži ovaj TV sa sajtom.");
+        pairSub.setTextColor(getResources().getColor(R.color.text_3));
+        if (paired) {
+            pairTitle.setText("Povezano" + (cloud.ownerName().isEmpty() ? "" : " · " + cloud.ownerName()));
+            pairSub.setText("OK dvaput da odspojiš ovaj TV");
+        } else {
+            pairTitle.setText("Poveži TV sa sajtom");
+            pairSub.setText("QR kod ili kod od 6 slova, bez kucanja na TV-u");
+        }
+        fillBox(loginsBox, repo.logins(), true, paired);
+        fillBox(linksBox, repo.links(), false, paired);
+        Subs subs = new Subs(this);
+        subsState.setText(subs.configured()
+                ? "Podešeni (OpenSubtitles)."
+                : "Nisu podešeni. OpenSubtitles ključ upiši na sajtu, u dijelu „Titlovi“.");
     }
 
-    private void fillBox(ViewGroup box, List<Repo.Source> sources, boolean logins) {
+    private void fillBox(ViewGroup box, List<Repo.Source> sources, boolean logins, boolean paired) {
         box.removeAllViews();
-        LayoutInflater inf = LayoutInflater.from(this);
         if (sources.isEmpty()) {
             TextView empty = new TextView(this);
-            empty.setText(logins ? "Još nema prijava." : "Nema dodatnih linkova. Balkanske liste su uvijek uključene.");
+            empty.setText(logins
+                    ? (paired ? "Nema prijava. Dodaj prijavu na sajtu." : "Nema prijava.")
+                    : "Nema dodatnih linkova. Balkanske liste su uvijek uključene.");
             empty.setTextColor(getResources().getColor(R.color.text_3));
             empty.setTextSize(14);
             empty.setPadding(0, Ui.dp(this, 10), 0, 0);
             box.addView(empty);
             return;
         }
-        for (final Repo.Source s : sources) {
-            final View row = inf.inflate(R.layout.item_list_source, box, false);
+        LayoutInflater inf = LayoutInflater.from(this);
+        for (Repo.Source s : sources) {
+            View row = inf.inflate(R.layout.item_list_source, box, false);
             Ui.applyFonts(row);
-            final TextView title = row.findViewById(R.id.title);
-            final TextView sub = row.findViewById(R.id.sub);
-            title.setText(s.name);
-            final String info = describe(s, logins);
-            sub.setText(info);
-            row.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    if (s.id.equals(armedId)) {
-                        repo.removeSource(s.id);
-                        armedId = null;
-                        Toast.makeText(ListsActivity.this, "Uklonjeno: " + s.name, Toast.LENGTH_SHORT).show();
-                        int idx = ((ViewGroup) row.getParent()).indexOfChild(row);
-                        fill();
-                        focusAfterRemove(logins, idx);
-                    } else {
-                        armedId = s.id;
-                        sub.setText("Pritisni OK još jednom da ukloniš ovu listu");
-                        sub.setTextColor(getResources().getColor(R.color.live));
-                    }
-                }
-            });
-            row.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-                @Override public void onFocusChange(View v, boolean hasFocus) {
-                    if (!hasFocus && s.id.equals(armedId)) {
-                        armedId = null;
-                        sub.setText(info);
-                        sub.setTextColor(getResources().getColor(R.color.text_3));
-                    }
-                }
-            });
-            box.addView(row);
+            ((TextView) row.findViewById(R.id.title)).setText(s.name);
+            ((TextView) row.findViewById(R.id.sub)).setText(describe(s, logins));
+            box.addView(row);   // fokusira se samo radi listanja, OK ne radi nista
         }
     }
 
-    private void focusAfterRemove(boolean logins, int idx) {
-        ViewGroup box = logins ? loginsBox : linksBox;
-        View target = null;
-        if (box.getChildCount() > 0 && box.getChildAt(0).isFocusable()) {
-            target = box.getChildAt(Math.min(idx, box.getChildCount() - 1));
-        }
-        if (target == null) target = findViewById(logins ? R.id.add_login : R.id.add_link);
-        target.requestFocus();
-    }
-
-    /** "server.com · korisnik" za prijavu, "server.com" za link (lozinka se nikad ne prikazuje). */
-    private static String describe(Repo.Source s, boolean login) {
+    /** "server.com · korisnik" za prijavu, "server.com/putanja" za link (lozinka se nikad ne prikazuje). */
+    static String describe(Repo.Source s, boolean login) {
         if (login) {
             Xtream x = Xtream.from(s.url);
             if (x != null) return x.host.replaceFirst("^https?://", "") + "  ·  " + x.user;
@@ -135,10 +173,5 @@ public class ListsActivity extends Activity {
         } catch (Exception e) {
             return "";
         }
-    }
-
-    /** Nazad na izbor profila (glavni ekran sam primijeti promjenu i ponovo ucita). */
-    private void done() {
-        finish();
     }
 }

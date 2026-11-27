@@ -41,6 +41,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     static final List<String> PINNED = Arrays.asList("BA", "RS", "HR", "ME", "SI", "MK", "XK");
 
     private Repo repo;
+    private Cloud cloud;
     private Health health;
     private Updater updater;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -76,6 +77,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         repo = Repo.get(this);
+        cloud = Cloud.get(this);
 
         // izvor jos nije izabran (npr. pokrenuto preko stare precice) -> prvo izbor
         if (repo.mode() == null) {
@@ -132,7 +134,18 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             }
         });
         findViewById(R.id.btn_refresh).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) { load(true); }
+            @Override public void onClick(View v) {
+                // prvo liste sa sajta, pa kanali
+                if (!cloud.paired()) { load(true); return; }
+                showLoading();
+                cloud.syncAsync(new Cloud.Callback() {
+                    @Override public void onSync(int r) {
+                        if (isFinishing()) return;
+                        if (r == Cloud.SYNC_UNPAIRED) toast("Ovaj TV je odspojen sa sajta.");
+                        load(true);
+                    }
+                });
+            }
         });
         findViewById(R.id.btn_update).setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { updater.check(true); }
@@ -182,6 +195,16 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
         super.onResume();
         if (updater == null) return; // activity se zatvara (preusmjereno na izbor izvora)
         updater.onResume();
+        // liste su mozda promijenjene na sajtu: kad stignu, ucitaj ponovo ako treba
+        cloud.syncAsync(new Cloud.Callback() {
+            @Override public void onSync(int r) {
+                if (isFinishing() || shownPlaylistId == null) return;
+                if (r == Cloud.SYNC_UNPAIRED) toast("Ovaj TV je odspojen sa sajta.");
+                if ((r == Cloud.SYNC_CHANGED || r == Cloud.SYNC_UNPAIRED) && !shownPlaylistId.equals(repo.activeId())) {
+                    load(false);
+                }
+            }
+        });
         if (shownPlaylistId != null && !shownPlaylistId.equals(repo.activeId())) {
             // liste ili profil su promijenjeni (npr. uklonjena prijava): ucitaj ponovo
             load(false);

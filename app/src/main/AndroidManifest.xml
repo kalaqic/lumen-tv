@@ -46,13 +46,6 @@
             android:theme="@style/Theme.Lumen.Player" />
 
         <activity
-            android:name=".XtreamActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.Lumen"
-            android:windowSoftInputMode="adjustPan|stateHidden" />
-
-        <activity
             android:name=".VodActivity"
             android:exported="false"
             android:screenOrientation="landscape"
@@ -72,7 +65,7 @@
             android:theme="@style/Theme.Lumen.Player" />
 
         <activity
-            android:name=".SubsSetupActivity"
+            android:name=".PairActivity"
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.Lumen" />

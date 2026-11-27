@@ -170,6 +170,18 @@ public final class Repo {
         return src;
     }
 
+    /**
+     * Zamijeni sve liste (preuzete sa sajta). Vraca true ako se nesto promijenilo.
+     * Ako vise nema prijava, profil "Moje prijave" se sam prebaci na besplatne kanale.
+     */
+    public synchronized boolean replaceSources(List<Source> logins, List<Source> links) {
+        String before = prefs.getString("logins", "[]") + "|" + prefs.getString("links", "[]");
+        writeSources("logins", logins);
+        writeSources("links", links);
+        String after = prefs.getString("logins", "[]") + "|" + prefs.getString("links", "[]");
+        return !before.equals(after);
+    }
+
     public void removeSource(String id) {
         for (String key : new String[]{"logins", "links"}) {
             List<Source> l = readSources(key);

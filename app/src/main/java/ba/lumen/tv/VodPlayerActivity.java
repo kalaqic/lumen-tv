@@ -629,7 +629,7 @@ public class VodPlayerActivity extends Activity {
         rows.addAll(textRows);
         rows.add(subs.configured()
                 ? new Row(ROW_SEARCH, "Traži titlove na internetu…", "bosanski, hrvatski, srpski, engleski")
-                : new Row(ROW_SETUP, "Titlovi sa interneta…", "Treba besplatan OpenSubtitles ključ"));
+                : new Row(ROW_SETUP, "Titlovi sa interneta", "OpenSubtitles ključ upiši na sajtu " + Cloud.get(this).siteLabel()));
         if (audioRows.size() > 1) {
             rows.add(new Row(ROW_HEADER, "ZVUK", null));
             rows.addAll(audioRows);
@@ -704,9 +704,9 @@ public class VodPlayerActivity extends Activity {
                 hidePanel();
                 break;
             case ROW_SETUP:
+                // ključ se upisuje na sajtu (na TV-u se ništa ne kuca)
                 hidePanel();
-                player.setPlayWhenReady(false);
-                startActivity(new Intent(this, SubsSetupActivity.class));
+                showMessage("Na sajtu " + Cloud.get(this).siteLabel() + " u dijelu „Titlovi“ upiši OpenSubtitles ključ");
                 break;
             case ROW_SEARCH:
                 searchSubs();
@@ -756,10 +756,10 @@ public class VodPlayerActivity extends Activity {
         if (err != null) {
             panelSub.setText("Greška");
             rows.add(new Row(ROW_INFO, err, null));
-            rows.add(new Row(ROW_SETUP, "Podešavanje titlova…", "OpenSubtitles ključ i nalog"));
+            rows.add(new Row(ROW_SETUP, "Podešavanje titlova", "Ključ i nalog mijenjaš na sajtu " + Cloud.get(this).siteLabel()));
         } else if (res.isEmpty()) {
             panelSub.setText("Nema titlova za ovaj naslov");
-            rows.add(new Row(ROW_SETUP, "Podešavanje titlova…", "OpenSubtitles ključ i nalog"));
+            rows.add(new Row(ROW_SETUP, "Podešavanje titlova", "Ključ i nalog mijenjaš na sajtu " + Cloud.get(this).siteLabel()));
         } else {
             panelSub.setText(WelcomeActivity.plural(res.size(), "titl", "titla", "titlova") + " · ◀ nazad");
             int max = Math.min(res.size(), 40);
