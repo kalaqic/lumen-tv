@@ -348,7 +348,7 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
                 }
             }
         } else {
-            // Prijava: svi, moje, kategorije servera (balkanske prve), drzave ako ih ima
+            // Prijava: svi, moje, filmovi/serije, drzave, prijave, kategorije servera (balkanske prve)
             items.add(new SideItem(SideItem.HEADER, null, "Biblioteka", 0));
             SideItem allItem = new SideItem(SideItem.ALL, null, "Svi kanali", all.size());
             allItem.icon = R.drawable.ic_grid;
@@ -361,20 +361,21 @@ public class MainActivity extends Activity implements SidebarAdapter.Listener, C
             SideItem series = new SideItem(SideItem.SERIES, null, "Serije", 0);
             series.icon = R.drawable.ic_series;
             items.add(series);
+            // drzave (BiH, Srbija, Hrvatska prve), pa prijave, pa kategorije servera
+            if (countries.size() > 0) {
+                items.add(new SideItem(SideItem.HEADER, null, "Države", 0));
+                for (String code : sortedCountries(countries.keySet())) {
+                    SideItem it = new SideItem(SideItem.COUNTRY, code, Labels.countryName(code), countries.get(code));
+                    it.emoji = Labels.flag(code);
+                    items.add(it);
+                }
+            }
             addLists(items, all, true);
             if (cats.size() > 1) {
                 items.add(new SideItem(SideItem.HEADER, null, "Kategorije", 0));
                 for (String k : sortedCategories(cats.keySet(), true)) {
                     SideItem it = new SideItem(SideItem.CATEGORY, k, Labels.category(k), cats.get(k));
                     it.icon = R.drawable.ic_tag;
-                    items.add(it);
-                }
-            }
-            if (countries.size() > 1) {
-                items.add(new SideItem(SideItem.HEADER, null, "Države", 0));
-                for (String code : sortedCountries(countries.keySet())) {
-                    SideItem it = new SideItem(SideItem.COUNTRY, code, Labels.countryName(code), countries.get(code));
-                    it.emoji = Labels.flag(code);
                     items.add(it);
                 }
             }

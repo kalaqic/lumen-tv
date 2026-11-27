@@ -49,7 +49,7 @@ public final class M3uParser {
                 {"AT", "AT"}, {"CH", "CH"}, {"FR", "FR"}, {"IT", "IT"}, {"ES", "ES"}, {"TR", "TR"},
                 {"NL", "NL"}, {"PL", "PL"}, {"AL", "AL"}, {"RO", "RO"}, {"HU", "HU"}, {"BG", "BG"},
                 {"GR", "GR"}, {"PT", "PT"}, {"SE", "SE"}, {"DK", "DK"}, {"NO", "NO"}, {"CZ", "CZ"},
-                {"SK", "SK"}, {"RU", "RU"}, {"AR", "AR"}, {"IN", "IN"}, {"CA", "CA"}, {"AU", "AU"},
+                {"SK", "SK"}, {"RU", "RU"} , {"CA", "CA"}, {"AU", "AU"},
                 {"XK", "XK"}, {"KS", "XK"}
         };
         for (String[] e : m) PREFIX_CODES.put(e[0], e[1]);
@@ -128,6 +128,8 @@ public final class M3uParser {
                 cur.url = url.trim();
                 if (cur.groups.length == 0) cur.groups = new String[]{"Undefined"};
                 cur.searchKey = normalize(cur.name);
+                // IPTV prijave rijetko imaju tvg-country: drzava iz naziva ili kategorije
+                if (cur.country == null) cur.country = inferCountry(cur);
                 cur.balkan = isBalkan(cur);
                 cur.listId = listId;
                 // filmovi i serije iz Xtream liste nisu kanali (imaju svoj ekran)
@@ -234,6 +236,39 @@ public final class M3uParser {
     }
 
     /** Drzava iz naziva kategorije ("BIH", "Srbija HD", "HRVATSKA" ...), ili null. */
+    /**
+     * Drzava kanala kad je lista ne navodi: prefiks u nazivu ("BA: RTRS", "|SRB| RTS 1",
+     * "|EX-YU| HR: HRT 1"), pa kategorija ("BIH | INFORMATIVNI", "EX-YU | SRBIJA", "DE: Sport").
+     * "EX-YU" sam po sebi nije drzava. Vraca null ako se ne moze znati.
+     */
+    static String inferCountry(Channel c) {
+        String r = prefixCountry(c.rawName);
+        if (r == null) r = prefixCountry(c.name);
+        if (r != null) return r;
+        r = regionOfGroups(c.groups);
+        if (r != null) return r;
+        for (String g : c.groups) {
+            r = prefixCountry(g);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    /** "BA: ...", "|SRB| ...", "[HR] ...", "|EX-YU| BA: ..." -> BA, RS, HR, BA; inace null. */
+    static String prefixCountry(String s) {
+        if (s == null) return null;
+        String rest = s.trim();
+        for (int i = 0; i < 2; i++) {
+            Matcher m = NAME_PREFIX.matcher(rest);
+            if (!m.find()) return null;
+            String code = PREFIX_CODES.get(m.group(1).toUpperCase(Locale.ROOT).replace("-", ""));
+            if (code == null) return null;
+            if (!"EXYU".equals(code)) return code;
+            rest = rest.substring(m.end());
+        }
+        return null;
+    }
+
     static String regionOfGroups(String[] groups) {
         for (String g : groups) {
             Set<String> t = new HashSet<>(Arrays.asList(
