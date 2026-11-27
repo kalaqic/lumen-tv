@@ -5,5 +5,5 @@
         Sajt je onda https://<ID>.web.app i TV odatle sam preuzme sva podesavanja.
         Isti ID upisi u firebase/.firebaserc.
     -->
-    <string name="firebase_project" translatable="false">LUMEN_FIREBASE_PROJECT</string>
+    <string name="firebase_project" translatable="false">lumen-tv-1a2b3</string>
 </resources>
